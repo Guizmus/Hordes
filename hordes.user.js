@@ -7,6 +7,22 @@
 // @version     1.0.0
 // @grant		none
 // ==/UserScript==
+if (navigator.userAgent.toLowerCase().indexOf('chrome') > -1) {
+	if (typeof(unsafeWindow) == "undefined")
+		var unsafeWindow = window;
+	var load,execute,loadAndExecute;load=function(a,b,c){var d;d=document.createElement("script"),d.setAttribute("src",a),b!=null&&d.addEventListener("load",b),c!=null&&d.addEventListener("error",c),document.body.appendChild(d);return d},execute=function(a){var b,c;typeof a=="function"?b="("+a+")();":b=a,c=document.createElement("script"),c.textContent=b,document.body.appendChild(c);return c},loadAndExecute=function(a,b){return load(a,function(){return execute(b)})};
+} else {
+	var loadAndExecute = function(url,f) {
+		return f();
+	}
+}
+
+// compatibilité chrome
+loadAndExecute("//ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js", function() {
+
+
+if (typeof(unsafeWindow) == "undefined")
+	var unsafeWindow = window;
 
 // modification de l'ajax jquery pour accepter le crossdomaine
 jQuery.ajax = (function(_ajax){
@@ -22,43 +38,41 @@ jQuery.ajax = (function(_ajax){
     }
    
     return function(o) {
-       
         var url = o.url;
-       
-        if ( /get/i.test(o.type) && !/json/i.test(o.dataType) && isExternal(url) ) {
-            o.url = YQL;
-            o.dataType = 'json';
-           
-            o.data = {
-                q: query.replace(
-                    '{URL}',
-                    url + (o.data ?
-                        (/\?/.test(url) ? '&' : '?') + jQuery.param(o.data)
-                    : '')
-                ).replace(
-                    '{html}',
-                    o.ext ? o.ext : 'html'
-                ),
-                format: o.format || 'xml'
-            };
-            if (!o.success && o.complete) {
-                o.success = o.complete;
-                delete o.complete;
-            }
-           
-            o.success = (function(_success){
-                return function(data) {
-                    if (_success) {
-                        _success.call(this, {
-                            responseText: (data.results ? data.results[0] : (data.query.results || ''))
-                                // .replace(/<script[^>]+?\/>|<script(.|\s)*?\/script>/gi, '')
-                        }, 'success');
-                    }
-                   
-                };
-            })(o.success);
-           
-        }
+		
+		if (isExternal(url) && /get/i.test(o.type) && !/json/i.test(o.dataType)) {
+			o.url = YQL;
+			o.dataType = 'json';
+		   
+			o.data = {
+				q: query.replace(
+					'{URL}',
+					url + (o.data ?
+						(/\?/.test(url) ? '&' : '?') + jQuery.param(o.data)
+					: '')
+				).replace(
+					'{html}',
+					o.ext ? o.ext : 'html'
+				),
+				format: o.format || 'xml'
+			};
+			if (!o.success && o.complete) {
+				o.success = o.complete;
+				delete o.complete;
+			}
+		   
+			o.success = (function(_success){
+				return function(data) {
+					if (_success) {
+						_success.call(this, {
+							responseText: (data.results ? data.results[0] : (data.query.results || ''))
+								// .replace(/<script[^>]+?\/>|<script(.|\s)*?\/script>/gi, '')
+						}, 'success');
+					}
+				   
+				};
+			})(o.success);
+		}
        
         return _ajax.apply(this, arguments);
        
@@ -310,6 +324,7 @@ unsafeWindow.sab_MWL = {
 					});
 				});
 			} else {
+				// console.log("lancement requete crossdomain pour "+this.noms_a_analyser.join(","));
 				jQuery.ajax({
 					type: 'GET',
 					url : "http://hordes.my-css-lab.com/xml.php?name="+this.noms_a_analyser.join(","),
@@ -320,9 +335,9 @@ unsafeWindow.sab_MWL = {
         }
     },
 	display_rating : function (nom) {
-		unsafeWindow.sab_cache.set_domaine("tid_analyzed");
+		unsafeWindow.sab_cache.set_domaine("tida");
 		var datas = unsafeWindow.sab_cache.get(nom);
-		var rating = $("<span style='position:relative' class='sab_rating'>"+(datas.plaintes==""?"":datas.plaintes+"<img onmouseout='js.HordeTip.hide(event)' onmouseover='js.HordeTip.showHelp(this,\"Cliquez pour avoir le détail des plaintes\");' src='http://hordes.my-css-lab.com/ames/ame1.gif' alt='plaintes' style='cursor:pointer' onclick='detail_plaintes(\""+nom+"\")' title='plaintes'/> ")+(datas.recomms==""?"":datas.recomms+"<img src='http://www.hordes.fr/gfx/forum/smiley/h_blink.gif' alt='recos.' title='recos.'/>")+"</span>");
+		var rating = $("<span style='position:relative' class='sab_rating'>"+(datas.plaintes==""?"":datas.plaintes+"<img onmouseout='js.HordeTip.hide(event)' onmouseover='js.HordeTip.showHelp(this,\"Cliquez pour avoir le détail des plaintes\");' src='http://data.hordes.fr/gfx/icons/item_soul_blue.gif' alt='plaintes' style='cursor:pointer' onclick='detail_plaintes(\""+nom+"\")' title='plaintes'/> ")+(datas.recomms==""?"":datas.recomms+"<img src='http://www.hordes.fr/gfx/forum/smiley/h_blink.gif' alt='recos.' title='recos.'/>")+"</span>");
 		$.each($("a.tid_user"),function(x,a) {
 			var sanitize = $(a).contents().first().text().trim().toLowerCase();
 			if ((sanitize == datas.name) && ($(".sab_rating",$(a).parent()).length == 0))
@@ -334,9 +349,9 @@ unsafeWindow.sab_MWL = {
 		return sanitize;
 	},
 	analyser_tid : function () {
-		unsafeWindow.sab_cache.set_domaine("tid_analyzed");
+		unsafeWindow.sab_cache.set_domaine("tida");
 		this.noms_a_analyser = Array();
-		$.each($("a.tid_user:not(.sab_tid_analysed"),function (x,a) {
+		$.each($("a.tid_user:not(.sab_tid_analysed)"),function (x,a) {
 			$(a).addClass("sab_tid_analysed");
 			var nom = unsafeWindow.sab_MWL.sanitize_name(a);
 			if (unsafeWindow.sab_cache.get(nom))
@@ -345,7 +360,7 @@ unsafeWindow.sab_MWL = {
 				unsafeWindow.sab_MWL.ajouter_nom(nom);
 		});
 		this.callback = function (res) {
-			unsafeWindow.sab_cache.set_domaine("tid_analyzed");
+			unsafeWindow.sab_cache.set_domaine("tida");
 			var citizens = $.xml2json(jQuery.parseXML(res.responseText));
 			$.each(citizens.citizen ? citizens.citizen : Array(),function(x,c){
 				unsafeWindow.sab_cache.set(c.name,{name : c.name, plaintes : c.plaintes, recomms : c.recomms});
@@ -406,9 +421,10 @@ unsafeWindow.sab_MWL = {
 					var a = $("#MWL_"+c.name);
 					a.parent().next().remove();
 					c.plaintes = parseInt(c.plaintes == "" ? 0 : c.plaintes);
-					a.parent().parent().append($("<td>"+((c.plaintes >= 10) ? "<strong>"+c.plaintes+"</strong>" : c.plaintes)+(c.plaintes > 0 ? " <img style='cursor:pointer;display:inline-block;float:right' onclick='detail_plaintes(\""+a.text().trim()+"\")' src='/gfx/design/iconHelp.gif'/>" : "")+"</td>"));
+					a.parent().parent().append($("<td>"+(c.plaintes > 0 ? c.plaintes+" <img style='cursor:pointer;display:inline-block;float:right' onclick='detail_plaintes(\""+a.text().trim()+"\")' src='/gfx/icons/item_soul_"+(c.plaintes>=10 ? "red" : "blue")+".gif'/>" : "")+"</td>"));
 					c.recomms = parseInt(c.recomms == "" ? 0 : c.recomms);
-					a.parent().parent().append($("<td>"+((c.recomms >= 10) ? "<strong>"+c.recomms+"</strong>" : c.recomms)+"</td>"));
+					a.parent().parent().append($("<td>"+( c.recomms > 0 ? c.recomms+" <img src='http://data.twinoid.com/img/smile/square/"+(c.recomms>=10 ? "happy" : "smile")+".png'/>" : "")+"</td>"));
+					// a.parent().parent().append($("<td>"+((c.recomms >= 10) ? "<strong>"+c.recomms+"</strong>" : c.recomms)+"</td>"));
 				}
 			});
 		};
@@ -441,8 +457,12 @@ unsafeWindow.detail_plaintes = function (nom) {
 unsafeWindow.sab_resume_ville = {
 	creer_boutons : function () {
 		var bouton_1 = $(" <a class='inlineButton sab_temp' onclick='sab_resume_ville.preparer_form_analyse_atk(this);'>Analyser l'attaque</span>");
-		$("#generic_section > div.cityHome a.button").prev().children().last().append(bouton_1);
-		$(bouton_1).parent().parent().append("<li><a class='inlineButton' onclick='unsafeWindow.sab_resume_ville.maj_bbh();'>MàJ BBH</span></li>");
+		$("#generic_section div.cityHome ul.ul:has(img[src='/gfx/icons/small_human.gif']) li").last().append(bouton_1);
+		$(bouton_1).parent().parent().append("<li><a class='inlineButton' onclick='sab_resume_ville.maj_bbh();'>MàJ BBH</span></li>");
+		// var bouton_1 = $(" <a class='inlineButton sab_temp' onclick='sab_resume_ville.preparer_form_analyse_atk(this);'>Analyser l'attaque</span>");
+		// $("#generic_section > div.cityHome a.button").prev().children().last().append(bouton_1);
+		// $(bouton_1).parent().parent().append("<li><a class='inlineButton' onclick='unsafeWindow.sab_resume_ville.maj_bbh();'>MàJ BBH</span></li>");
+		
 	},
 	// analyse de l'attaque
 	// pull les données d'un programme python développé par ma part
@@ -540,7 +560,6 @@ unsafeWindow.sab_chantiers = {
 		if (datas.temporaire == "1")
 			td.append($(' <img src="http://data.hordes.fr/gfx/icons/small_warning.gif">'));
 		if ((datas.plan) && (parseInt(datas.plan) > 0))  {
-			// console.log(datas);
 			td.append($('<img style="float:right" src="gfx/icons/item_'+unsafeWindow.detail_items_bbh[datas.plan].img+'.gif">'));
 		}
 		sortie.append(td);
@@ -657,7 +676,6 @@ unsafeWindow.sab_banque = {
 		var iconurl = unsafeWindow.sab_cache.get("iconurl");
 		var items = contenu_banque.split(";")
 		$.each(items, function (x,item) {
-			// console.log(typeof(item));
 			var item_datas = item.split(":");
 			var details_item = unsafeWindow.detail_items_bbh[item_datas[0]];
 			var nouvel_objet = $("<li>").attr("class","multi");
@@ -750,6 +768,7 @@ unsafeWindow.sab_logs = {
 // fonction exécutée suite à un quelconque chargement
 var analyser_page = function() {
 	unsafeWindow.sab_analysed = true;
+	console.log("analyse page");
 	if ($("div.maps table.table tr td.list ul li a strong").length > 0)
 		unsafeWindow.sab_MWL.lanch_analyse_ville();
 		
@@ -774,7 +793,7 @@ var analyser_page = function() {
 
 // première analyse. Le ondata ne se déclenche pas encore, on fait un pseudo Interval
 var premiere_analyse = function () {
-	if (($("#generic_section").children().length == 0) && (unsafeWindow.sab_analysed == false) && ($("a.tid_user:not(.sab_tid_analysed").length == 0)) {
+	if (($("#generic_section").children().length == 0) && (unsafeWindow.sab_analysed == false) && ($("a.tid_user:not(.sab_tid_analysed").length == 0) && ($("a[href^='#ghost/user']") == 0)) {
 		// console.log("report première analyse");
 		window.setTimeout(premiere_analyse, 500);
 	} else {
@@ -785,13 +804,28 @@ unsafeWindow.sab_analysed = false; // variable témoignant de l'état d'analyse 
 
 $(function () {
 	// hook de la fonction d'analyse de la page après le chargement. Ne fonctionne pas sur le forum
-	js.XmlHttp.onData = (function (_ondata) {
-		return function (o) {
-			var retour = _ondata.apply(this,arguments);
-			analyser_page();
-			return retour;
+	// crédit au remplacement de XMLHTTPRequest : https://gist.github.com/3183154
+	// permet le hook sous chrome
+	var send = window.XMLHttpRequest.prototype.send,
+		onReadyStateChange;
+
+	function sendReplacement(data) {
+		if(this.onreadystatechange) {
+			this._onreadystatechange = this.onreadystatechange;
 		}
-	})(js.XmlHttp.onData);
+		this.onreadystatechange = onReadyStateChangeReplacement;
+		return send.apply(this, arguments);
+	}
+	function onReadyStateChangeReplacement() {
+		if(this._onreadystatechange) {
+			var temp = this._onreadystatechange.apply(this, arguments);
+			if (this.readyState == 4)
+				analyser_page();
+			return temp;
+		}
+	}
+	window.XMLHttpRequest.prototype.send = sendReplacement;
+
 	
 	// hook pour le forum. plus gourmand, le chargement des pages du forum n'ayant été réussi à hooker.
 	if (/\/tid\/forum/.test(window.location.href)) {
@@ -800,4 +834,6 @@ $(function () {
 	}
 
 	window.setTimeout(premiere_analyse, 500);
+});
+
 });
