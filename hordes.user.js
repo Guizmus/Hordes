@@ -4,9 +4,11 @@
 // @include     http://www.hordes.fr/*
 // @include     www.hordes.fr/*
 // @include     hordes.fr/*
+// @match     	*hordes.fr/*
 // @version     1.0.0
 // @grant		none
 // ==/UserScript==
+if(location.href.match('hordes.fr')) {
 if (navigator.userAgent.toLowerCase().indexOf('chrome') > -1) {
 	if (typeof(unsafeWindow) == "undefined")
 		var unsafeWindow = window;
@@ -836,4 +838,4 @@ $(function () {
 	window.setTimeout(premiere_analyse, 500);
 });
 
-});
+})};
