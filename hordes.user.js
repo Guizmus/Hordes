@@ -9,10 +9,11 @@
 // ==/UserScript==
 
 // compatibilité chrome : @include
-if(location.host.match('hordes.fr')) {
+if(location.host.match('hordes.fr')) { // équivalent des @include de GM
 
 // compatibilité chrome jQuery
 if ((navigator.userAgent.toLowerCase().indexOf('chrome') > -1) && (typeof($) == "undefined") /* && (!/\/tid\/forum/.test(unsafeWindow.location.href)) */) {
+	// sous chrome, unsafeWindow n'existe pas. Le script est exécuté avant que jQuery soit déclaré, donc on le précharge avant d'aller plus loin.
 	if (typeof(unsafeWindow) == "undefined")
 		var unsafeWindow = window;
 	var load,execute,loadAndExecute;load=function(a,b,c){var d;d=document.createElement("script"),d.setAttribute("src",a),b!=null&&d.addEventListener("load",b),c!=null&&d.addEventListener("error",c),document.body.appendChild(d);return d},execute=function(a){var b,c;typeof a=="function"?b="("+a+")();":b=a,c=document.createElement("script"),c.textContent=b,document.body.appendChild(c);return c},loadAndExecute=function(a,b){return load(a,function(){return execute(b)})};
@@ -21,28 +22,35 @@ if ((navigator.userAgent.toLowerCase().indexOf('chrome') > -1) && (typeof($) == 
 		return f();
 	}
 }
+// lancement du chargement de jQuery si on est sur chrome
 loadAndExecute("http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js", function() {
+// pour assurer la compatibilité avec le js de hordes, vu qu'on va être ammené à modifier jQuery, on fait un noconflict sur chrome. GM n'en a pas besoin
 var $sab = (navigator.userAgent.toLowerCase().indexOf('chrome') > -1) ? jQuery.noConflict() : $;
 
 // main
 $sab(function () {
 
+// étrangement, unsafeWindow est parfois "oublié" à ce point sur chrome. Si c'est le cas, on le redéclare.
 if (typeof(unsafeWindow) == "undefined")
 	var unsafeWindow = window;
 
+// variables de débug, peu utilisées
 unsafeWindow.sab_debug = false;
 unsafeWindow.sab_debug_id = 328538;
 unsafeWindow.sab_debug_xml = "328538_1350733026";
 
+// sauvegarde de la version actuellement en train de tourner
 unsafeWindow.chrome = navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+
 // modification de l'ajax jquery pour accepter le crossdomaine
 $sab.ajax = (function(_ajax){
     var protocol = location.protocol,
         hostname = location.hostname,
         exRegex = RegExp(protocol + '//' + hostname),
-        YQL = 'http' + (/^https/.test(protocol)?'s':'') + '://query.yahooapis.com/v1/public/yql?callback=?',
+        YQL = 'http' + (/^https/.test(protocol)?'s':'') + '://query.yahooapis.com/v1/public/yql?callback=?', // utilisation de l'API de yahoo pour le crossdomaine
         query = 'select * from {HTML} where url="{URL}" {COMPLEMENT}';
-    function isExternal(url) {
+    function isExternal(url) { // cette fonction est celle à modifier si on veut changer les domaines pris en compte par ce faux AJAX.
+		// ici, j'autorise  guizmus.fr à passer par XMLHttpRequest de manière classique car j'y ai autorisé le crossdomaine.
         return !exRegex.test(url) && /:\/\//.test(url) && (!/guizmus.fr/.test(url));
     }
    
@@ -93,11 +101,12 @@ $sab.ajax = (function(_ajax){
 })($sab.ajax);
 
 // selector econtains pour jQuery. permet un matching strict sans prise en compte de la case.
+// $sab("truc:econtains('pouet')") retourne les éléments correspondant au sélecteur truc, et dont le contenu texte vaut très exactement 'pouet'
 $sab.expr[":"].econtains = function(obj, index, meta, stack){
-	// return (obj.textContent || obj.innerText || $(obj).text() || "").toLowerCase() == meta[3].toLowerCase();
-	// return (obj.textContent || obj.innerText || $(obj).text() || "") == meta[3];
 	return (obj.textContent || "") == meta[3];
 }
+
+// diverses bibliothèques récupérée sur Internet pour les besoins du script
 
 /*
  ### jQuery XML to JSON Plugin v1.1 - 2008-07-01 ###
@@ -295,14 +304,13 @@ return'"'+string+'"';};})($sab);
 
 // cache, via les storages 
 unsafeWindow.sab_cache = {
-	domaine : "sab_",
-	// cache_serveur : ["sab_xml_hordes_maj","sab_xml_hordes_attaque","sab_xml_hordes_contenu_banque","sab_xml_hordes_puits","sab_xml_hordes_building","sab_xml_hordes_annuaire","sab_xml_hordes_historique","sab_metacoa_dernier_affichage","sab_reglages_*","sab_xml_hordes_*"],
-	cache_serveur : ["sab_reglages_*","sab_xml_hordes_*"],
-	set_domaine : function (domaine) {
+	domaine : "sab_", // c'est le préfixe de domaine utilisé pour toutes les variables sauvegardées en cache, pour ne rien écraser de l'existant des autres sites
+	cache_serveur : ["sab_reglages_*","sab_xml_hordes_*"], // définie les variables à sauvegarder et restaurer du serveur. Le * n'est pas un vrai passe partout, ils sont spécifiquement autorisés en PHP pour éviter qu'on surcharge la BDD du serveur
+	set_domaine : function (domaine) { // permet de préciser le "domaine" dans les variables sauvegardées
 		this.domaine = "sab_"+domaine+"_";
 	},
-	get : function (key) {
-		if (key == 'api_key') {
+	get : function (key) { // récupération des données dans le cache "sessionStorage"
+		if (key == 'api_key') { // contrôle de sécurité, n'est plus sensé être appelé du tout
 			console.debug("Attention! clef API demandée en court terme!");
 			var retour = unsafeWindow.localStorage[this.domaine+key];
 			return (retour) ?  $sab.parseJSON(retour) : null;
@@ -310,36 +318,33 @@ unsafeWindow.sab_cache = {
 		var retour = unsafeWindow.sessionStorage[this.domaine+key];
 		return (retour) ?  $sab.parseJSON(retour) : null;
 	},
-	get_long_term : function (key) {
+	get_long_term : function (key) { // récupération des données dans le cache "localStorage"
 		var retour = unsafeWindow.localStorage[this.domaine+key];
 		return (retour) ?  $sab.parseJSON(retour) : null;
 	},
-	set : function (key,value) {
-		// if (key == 'api_key')
-			// return unsafeWindow.localStorage[this.domaine+key]=$sab.toJSON(value);
+	set : function (key,value) {// enregistrement des données dans le cache "sessionStorage"
         return unsafeWindow.sessionStorage[this.domaine+key]=$sab.toJSON(value);
 	},
-	set_long_term : function (key,value) {
+	set_long_term : function (key,value) {// enregistrement des données dans le cache "localStorage"
 		var value_prepared = $sab.toJSON(value);
-		if (value_prepared != unsafeWindow.localStorage[this.domaine+key]) {
-			// console.log("set long term : ",this.domaine+key,value);
+		if (value_prepared != unsafeWindow.localStorage[this.domaine+key]) { // les set_long_term envoyant des requêtes serveur dans certains cas, on évite de les faire si la donnée reste la même.
 			unsafeWindow.localStorage[this.domaine+key]=value_prepared;
 			if (this.domaine == "sab_reglages_" || this.domaine == "sab_xml_hordes_" || $sab.inArray(this.domaine+key,this.cache_serveur) >=0)
 				unsafeWindow.sab_serveur.prepare_set(key,value_prepared,this.domaine);
 		}
         return value_prepared;
 	},
-	set_raw : function(key,value) {
+	set_raw : function(key,value) { // enregistre en longterm une donnée brute, au lieu de la jsonifier
         return unsafeWindow.localStorage[this.domaine+key]=value;
 	},
-	get_raw : function (key) {
+	get_raw : function (key) { // get équivalent
 		var retour = unsafeWindow.localStorage[this.domaine+key];
 		return retour || null;
 	},
-	get_serveur : function (key) {
+	get_serveur : function (key) { // get sur le userstorage du serveur, pêu utilisé
 		unsafeWindow.sab_serveur.get(this.domaine+key);
 	},
-	vider_session : function () {
+	vider_session : function () { // suppression de toutes les clefs sauvegardées par ce script en session et en local.
 		Object.keys(localStorage)
 			.forEach(function(key){
 				// if ($sab.inArray(key,unsafeWindow.sab_cache.cache_serveur)) {
@@ -355,7 +360,7 @@ unsafeWindow.sab_cache = {
 				}
 			});
 	},
-	sauvegarder_session : function (datas) {
+	sauvegarder_session : function (datas) { // sauvegarde des données de session que le serveur va renvoyer
 		$sab.each(datas,function(clef,valeur) {
 			localStorage[clef] = valeur;
 			sessionStorage[clef] = valeur;
@@ -366,17 +371,16 @@ unsafeWindow.sab_cache = {
 // serveur
 unsafeWindow.sab_serveur = {
 	datas : {
-		// url_serveur : "http://guizmus.fr/",
-		// url_serveur : "http://guizmus.fr/dev/",
-		url_serveur : "http://guizmus.fr/v1_3_2_1/",
-		url_fixe : "http://www.guizmus.fr/",
+		url_serveur : "http://guizmus.fr/v1_3_2_1/", // url appelée pour tous les metacoas, updates et autres.
+		url_fixe : "http://www.guizmus.fr/", // url du site. Sert pour la mise à jour et la vérif du numéro de version
+		// variables de travail
 		callbacks : {},
 		id_r : 0,
 		est_identifie : false,
 		uid : 0,
 		sends_prepared : {}
 	},
-	executer : function (param) {
+	executer : function (param) { // requêtes serveur,préparation de son ajax et exécution
 		this.datas.id_r ++;
 		if (param.success)
 			this.register_callback(this.datas.id_r,param.success);
@@ -388,17 +392,16 @@ unsafeWindow.sab_serveur = {
 			} catch (err) {
 				alert("GHS : Erreur dans l'échange serveur !"+retour);
 			}
-			// eval(retour);
 		}
 		$sab.ajax(param);
 	},
-	register_callback : function (id,callback) {
+	register_callback : function (id,callback) { // private, prépare le callback
 		this.datas.callbacks[id] = callback;
 	},
-	callback_serveur : function (id_appel,datas) {
+	callback_serveur : function (id_appel,datas) { // private, appelé au success
 		return this.datas.callbacks[id_appel] ? (this.datas.callbacks[id_appel])(datas) : false;
 	},
-	send_xml : function () {
+	send_xml : function () { // fonction de débug pour sauvegarder le XML actuel sur le serveur en cas de besoin (bouton dans les options)
 		if (unsafeWindow.sab_xml_hordes.est_autorise()) {
 			unsafeWindow.sab_cache.set_domaine("reglages");
 			var clef = unsafeWindow.sab_cache.get_long_term("api_key");
@@ -412,7 +415,7 @@ unsafeWindow.sab_serveur = {
 			});
 		}
 	},
-	execution_identifee : function (param) {
+	execution_identifee : function (param) { // exécute une requête serveur en spécifiant la méta actuelle et l'identifiant utilisateur. Si le user est non connecté au serveur (clef_auth), une requête préliminaire est effecutée.
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		var clef_serveur = unsafeWindow.sab_cache.get("clef_serveur");
 		this.datas.est_identifie = (clef_serveur != null);
@@ -443,7 +446,6 @@ unsafeWindow.sab_serveur = {
 					type : 'POST',
 					data : datas,
 					success : function (retour) {
-						// console.log("retour authentification : ",retour);
 						unsafeWindow.sab_serveur.finaliser_authentification(retour);
 						if (!param.data) param.data = {};
 						param.data.clef_auth = retour.clef_auth;
@@ -459,7 +461,7 @@ unsafeWindow.sab_serveur = {
 			return unsafeWindow.sab_serveur.executer(param);
 		}
 	},
-	finaliser_authentification : function (datas) {
+	finaliser_authentification : function (datas) { // mise à jour des variables locales en fonction du retour de l'authentification
 		this.datas.est_identifie = true;
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		unsafeWindow.sab_cache.set("clef_serveur",datas.clef_auth);
@@ -474,7 +476,7 @@ unsafeWindow.sab_serveur = {
 		unsafeWindow.sab_cache.set_domaine("metacoa");
 		unsafeWindow.sab_cache.set("datas",metas);
 	},
-	set : function (champ, valeur) {
+	set : function (champ, valeur) { // set unitaire imédiat sur le serveur
 		this.execution_identifee({
 			url : this.datas.url_serveur+"update.php",
 			type : 'POST',
@@ -487,7 +489,7 @@ unsafeWindow.sab_serveur = {
 			}
 		});
 	},
-	sets : function (valeurs) {
+	sets : function (valeurs) { // sets multiples immédiats sur le serveur
 		this.execution_identifee({
 			url : this.datas.url_serveur+"update.php",
 			type : 'POST',
@@ -499,7 +501,7 @@ unsafeWindow.sab_serveur = {
 			}
 		});
 	},
-	get  : function (champ) {
+	get  : function (champ) { // get unique immédiat sur le serveur
 		this.execution_identifee({
 			url : this.datas.url_serveur+"update.php",
 			type : 'POST',
@@ -511,7 +513,7 @@ unsafeWindow.sab_serveur = {
 			}
 		});
 	},
-	gets : function (champs) {
+	gets : function (champs) { // gets multiples immédiats sur le serveur
 		this.execution_identifee({
 			url : this.datas.url_serveur+"update.php",
 			type : 'POST',
@@ -523,7 +525,7 @@ unsafeWindow.sab_serveur = {
 			}
 		});
 	},
-	prepare_set : function (key,value,domaine) {
+	prepare_set : function (key,value,domaine) { // prépare un set. Ne l'exécute pas, afin de regrouper les MAJ consécutive en 1 requête
 		// console.log("prepare set : ",domaine+key," : ",value);
 		// if (!unsafeWindow.sab_debug) {
 		unsafeWindow.sab_cache.set_domaine("serveur");
@@ -532,7 +534,7 @@ unsafeWindow.sab_serveur = {
 		unsafeWindow.sab_cache.set_long_term("sends_prepared",sends);
 		// }
 	},
-	send_set : function () {
+	send_set : function () { // envoie les sets préparés
 		unsafeWindow.sab_cache.set_domaine("serveur");
 		var sends = unsafeWindow.sab_cache.get_long_term("sends_prepared");
 		var valeurs = new Array();
@@ -547,10 +549,9 @@ unsafeWindow.sab_serveur = {
 			}
 		}
 		unsafeWindow.clearTimeout(unsafeWindow.sab_timerServeur);
-		// unsafeWindow.sab_timerServeur = unsafeWindow.setTimeout(unsafeWindow.sab_serveur.send_set,((valeurs.length == 1) && (valeurs[0].champ == "sab_metacoa_dernier_affichage")) ? 15000 : 5000);
 		unsafeWindow.sab_timerServeur = unsafeWindow.setTimeout(unsafeWindow.sab_serveur.send_set,((valeurs.length == 1)) ? 15000 : 5000);
 	},
-	load_session : function (f) {
+	load_session : function (f) { // charge la session à partir des données du serveur et de l'id utilisateur. appelé en cas de longue inactivité ou de déco/reco de hordes (permet de gérer le multicompte sur un même PC)
 		console.log("Guizmus'Hordes Script : chargement de vos données...");
 		unsafeWindow.sab_cache.vider_session();
 		return {
@@ -584,7 +585,7 @@ unsafeWindow.sab_serveur = {
 
 // gestions des options et de leur synchronisation
 unsafeWindow.sab_options = {
-	charger_reglages : function () {
+	charger_reglages : function () { // charge un json des réglages du script
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		return {
 			api_key : unsafeWindow.sab_cache.get_long_term('api_key'),
@@ -600,7 +601,7 @@ unsafeWindow.sab_options = {
 			v_light : unsafeWindow.sab_cache.get_long_term('v_light') == 1,
 		};
 	},
-	creer_options : function () {
+	creer_options : function () { // créé la page des options
 		if (($sab("#sab_allow_api").length == 0) && ($sab(".options").length > 0)) {
 			var sab_menu = $sab("<form onsubmit='sab_options.sauvegarder_options(); return false;' class='form' id='sab_options'></form>");
 			unsafeWindow.sab_cache.set_domaine("reglages");
@@ -740,7 +741,7 @@ unsafeWindow.sab_options = {
 			$sab(".options").append(sab_menu);
 		}
 	},
-	creer_ligne_option : function (param) {
+	creer_ligne_option : function (param) { // créé une ligne d'option en fn des param passés
 		var option = $sab("<div class='row'></div>");
 		if (param.attr_row)
 			option.attr(param.attr_row);
@@ -800,10 +801,10 @@ unsafeWindow.sab_options = {
 		}
 		return option;
 	},
-	sauvegarder_options : function () {
+	sauvegarder_options : function () { // sauvegarde les options sur le serveur. non utilisé car appelé quand même au unload, mais à mettre potentiellement sur un bouton
 		unsafeWindow.sab_serveur.send_set();
 	},
-	creer_categorie : function (name,css) {
+	creer_categorie : function (name,css) { // créé une catégorie d'options
 		return $sab("<div>")
 			.css({
 				"width" : "45%",
@@ -819,11 +820,11 @@ unsafeWindow.sab_options = {
 				})
 			);
 	},
-	maj_option_check : function(option_name,element) {
+	maj_option_check : function(option_name,element) { // mise à jour de l'option suite au cochage/décochage d'une checkbox
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		unsafeWindow.sab_cache.set_long_term(option_name,($sab(element).attr("checked") === "checked") ? true : null);
 	},
-	button_change : function (options,element,option_name) {
+	button_change : function (options,element,option_name) { // gère les changements d'états et la sauvegarde des boutons à texte variable (OUI/NON) dans les options
 		var value = element.innerHTML == options.on;
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		if (value) {
@@ -834,7 +835,7 @@ unsafeWindow.sab_options = {
 			unsafeWindow.sab_cache.set_long_term(option_name,true);
 		}
 	},
-	save_change_input : function (element,option_name) {
+	save_change_input : function (element,option_name) { // gère la sauvegarde des éléments input text dans les options
 		var value = element.value;
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		unsafeWindow.sab_cache.set_long_term(option_name,value);
@@ -849,8 +850,8 @@ unsafeWindow.sab_MWL = {
 		this.noms_a_analyser = Array();
 		this.callback = function () {};
 	},
-	ajouter_nom : function (nom) { this.noms_a_analyser.push(escape(nom)); },
-    query : function (type) {
+	ajouter_nom : function (nom) { this.noms_a_analyser.push(escape(nom)); }, // ajoute un nom à la liste des noms à analyser
+    query : function (type) { // analyse globalement la liste de noms actuelle
         if (this.noms_a_analyser.length > 0) {
 			if (type=="detail") {
 				var callback = this.callback;
@@ -875,7 +876,7 @@ unsafeWindow.sab_MWL = {
 			}
         }
     },
-	display_rating : function (nom) {
+	display_rating : function (nom) { // affiche l'évaluation d'un utilisateur donné à côé de son nom
 		unsafeWindow.sab_cache.set_domaine("tida");
 		var datas = unsafeWindow.sab_cache.get(nom) || {};
 		var reglages = unsafeWindow.sab_options.charger_reglages();
@@ -902,11 +903,11 @@ unsafeWindow.sab_MWL = {
 				$sab(a).after(rating);
 		});
 	},
-	sanitize_name : function (name) {
+	sanitize_name : function (name) { // nettoie le nom pour sauvegarde et recherche de sa notation
 		var sanitize = $sab(name).contents().first().text().trim().toLowerCase();
 		return sanitize;
 	},
-	analyser_tid : function () {
+	analyser_tid : function () { // analyse tous les noms non analysés de la page. Fonctionne appelée en setInterval :/
 		// unsafeWindow.sab_cache.set_domaine("tida");
 		this.noms_a_analyser = Array();
 		$sab.each($sab("a.tid_user:not(.sab_tid_analysed), a.sab_tid_todo"),function (x,a) {
@@ -930,7 +931,7 @@ unsafeWindow.sab_MWL = {
 		this.query("");
 	},
 	analyse_a_effectuer : false,
-	analyser_ville : function () {
+	analyser_ville : function () { // analyse une ville dans la page de choix de ville, une fois la liste des citoyens ouverte
 		if (!this.analyse_a_effectuer) return false;
 		
 		if ($sab(".maps .table ul").length  == 0) {
@@ -957,11 +958,11 @@ unsafeWindow.sab_MWL = {
 		
 		return false;
 	},
-	lanch_analyse_ville : function () {
+	lanch_analyse_ville : function () { // le chargement de la page des ville étant non standard, il faut attendre une durée variable. Cette fonction sert à lancer une nouvelle analyse.
 		this.analyse_a_effectuer = true;
 		this.analyser_ville();
 	},
-	detail_plaintes : function (nom) {
+	detail_plaintes : function (nom) { // détail des plaintes au clic sur une notation. Appelle unitairement MWL
 		js.HordeTip.showHelp(this,"Détail des plaintes de <strong>"+nom+"</strong><br/><img src=\"http://twinoid.com/img/loading.gif\">");
 		var MWL = unsafeWindow.sab_MWL;
 		MWL.init();
@@ -986,7 +987,7 @@ unsafeWindow.sab_xml_hordes = {
 		this.api_key = unsafeWindow.sab_cache.get_long_term('api_key');
 		return (typeof(this.api_key) == "string")
 	},
-	est_a_jour : function () {
+	est_a_jour : function () { // retour si il faut ou non que le XML soit mis à jour
 		unsafeWindow.sab_cache.set_domaine("xml_hordes");
 		var maj = unsafeWindow.sab_cache.get_long_term("maj");
 		if (maj == null) return false;
@@ -995,7 +996,7 @@ unsafeWindow.sab_xml_hordes = {
 		// return ((new Date()).getTime() < maj);
 		return ((new Date()).getTime() < (new Date(maj)).getTime());
 	},
-	maj_key : function () {
+	maj_key : function () { // met à jour la clef API
 		if ($sab("#sab_allow_api").length == 1)
 			if ($sab("#sab_allow_api").attr("checked") === "checked") {
 				// $sab("#sab_log_alerte").parent().css({"display":""});
@@ -1011,7 +1012,7 @@ unsafeWindow.sab_xml_hordes = {
 				unsafeWindow.sab_cache.set_long_term("api_key",null);
 			}
 	},
-	maj_alertes : function () {
+	maj_alertes : function () { // met à jour les alertes dans les options (non appelé désormais)
 		if ($sab("#sab_log_alerte").length == 1)
 			if ($sab("#sab_log_alerte").prop("checked")) {
 				unsafeWindow.sab_cache.set_domaine("reglages");
@@ -1021,7 +1022,7 @@ unsafeWindow.sab_xml_hordes = {
 				unsafeWindow.sab_cache.set_long_term("log_alertes",null);
 			}
 	},
-	charger_XML : function (callback) {
+	charger_XML : function (callback) { // charge le XML
 		var time_now = (new Date()).getTime();
 		var date_maj = (new Date(time_now + (unsafeWindow.sab_debug ? 0 : (5 * 60 * 1000)))).getTime();
 		// var date_maj = (new Date(time_now)).getTime();
@@ -1148,7 +1149,7 @@ unsafeWindow.sab_xml_hordes = {
 			}
 		});
 	},
-	comparer_nouveau_xml : function () {
+	comparer_nouveau_xml : function () { // compare le nouveau XML à l'ancien si il y a lieu. Permet de calculer les alertes (le log)
 		var date =  (new Date()).getTime();
 		unsafeWindow.sab_cache.set_domaine("xml_hordes");
 		var historique = unsafeWindow.sab_cache.get_long_term("historique");
@@ -1293,16 +1294,13 @@ unsafeWindow.sab_xml_hordes = {
 
 // Page vue d'ensemble de la ville
 unsafeWindow.sab_resume_ville = {
-	creer_boutons : function () {
+	creer_boutons : function () { // page résumé de la ville, créa des boutons "Analyse", ou encore la notif de méta
 		var bouton_1 = $sab(" <a class='inlineButton sab_temp' onclick='sab_resume_ville.preparer_form_analyse_atk(this);'>Analyser</span>");
 		$sab("#generic_section div.cityHome ul.ul:has(img[src='/gfx/icons/small_human.gif']) li").last().append(bouton_1);
 		var reglages = unsafeWindow.sab_options.charger_reglages();
 		if (reglages.meta_notif)
 			unsafeWindow.sab_metacoa.check_last_msg(function(retour) {
 				if (typeof(retour.last_msg) != "undefined") {
-					// $sab.each(retour.last_msg,function(x,id) {
-					
-					// }
 					if (retour.last_msg.length>0) {
 						var bouton_2 = unsafeWindow.sab_metacoa.icone_last_msg(retour.last_msg);
 						if (bouton_2 != "")
@@ -1311,12 +1309,9 @@ unsafeWindow.sab_resume_ville = {
 					}
 				}
 			});
-		// $sab(bouton_1).parent().parent().append("<li><a class='inlineButton' onclick='sab_resume_ville.maj_bbh();'>MàJ BBH</span></li>");
-		// $sab(bouton_1).parent().parent().append("<li>Mise à jour des sites : <a class='inlineButton' id='sab_maj_BBH' onclick='sab_resume_ville.maj_site_externe(\"BBH\");'>BBH</span> <a class='inlineButton' id='sab_maj_OOEV' onclick='sab_resume_ville.maj_site_externe(\"OOEV\");'>OOEV</span> <a class='inlineButton' id='sab_maj_PATA' onclick='sab_resume_ville.maj_site_externe(\"PATA\");'>Patamap</span> <a class='inlineButton' onclick='sab_resume_ville.maj_site_externe(\"PATA\");sab_resume_ville.maj_site_externe(\"OOEV\");sab_resume_ville.maj_site_externe(\"BBH\");'>Les 3</span></li>");
-		// $sab(".contentPanel .contentBlock").append(unsafeWindow.sab_outside.creer_boutons());
 		
 	},
-	preparer_form_analyse_atk : function (button) {
+	preparer_form_analyse_atk : function (button) { // formulaire d'analyse de l'attaque en ville
 		var ul = $sab(button).parent().parent();
 		var defense = $sab("ul.statusSummary li.left strong span").contents()[0].textContent.trim();
 		var attaque = $sab("ul.statusSummary li.mid strong").contents()[0].textContent.trim().split(" ");
@@ -1324,6 +1319,7 @@ unsafeWindow.sab_resume_ville = {
 		$sab(".sab_temp").remove();
 		ul.after("<h2>Analyse de l'attaque</h2><ul class='ul'><li>Défense prévue : <input name='sab_def' class='sab_data' type='text' onsubmit='return false' value='"+defense+"'/></li><li>Attaque min : <input name='sab_atk_min' class='sab_data' type='text' onsubmit='return false' value='"+attaque[0]+"'/></li><li>Attaque maxi : <input name='sab_atk_max' class='sab_data' type='text' onsubmit='return false' value='"+attaque[attaque.length-1]+"'/></li><li>Citoyens dormant en ville : <input type='text' name='sab_citoyen' class='sab_data' onsubmit='return false' value='"+citoyens+"'/></li><li><a class='sab_temp inlineButton' onclick='sab_resume_ville.executer_analyse(true); return false'>Lancer l'analyse</a></li></ul>");
 	},
+	// tentative de réécriture de l'algo de calcul des % de survie en JS. Ne fonctionne pas bien, à revoir.
 	factor : function (x,y) {
 		if (x <= y) {
 			var retour = 1;
@@ -1364,7 +1360,7 @@ unsafeWindow.sab_resume_ville = {
 		// analyse de l'attaque
 		// pull les données d'un programme python développé par ma part
 		// http://pythonanywhere.com/ (serveur python libre, hébergement d'une webapp gratuit)
-		// désormais, le calcul est en JS.
+		// désormais, le calcul est en JS. (PLUS MAINTENANT ^^)
 		var datas = Array();
 		$sab(".sab_data").each(function(x,a){
 			datas[$sab(a).attr("name")] = $sab(a).attr("value");
@@ -1394,6 +1390,7 @@ unsafeWindow.sab_resume_ville = {
 			ext : 'html'
 		});
 	},
+	// fontions de mise à jour des sites externes. Ne fonctionne qu'une fois toutes les 5 min à cause de la périodicité de mise à jour du XML...
 	maj_bbh : function (){
 		var a = $sab("<iframe src='http://bbh.fred26.fr/'></iframe>");
 		$sab(a).css({
@@ -1402,6 +1399,7 @@ unsafeWindow.sab_resume_ville = {
 		$sab(a).attr("onload","$sab(this).remove()");
 		$sab("body").append(a);
 	},
+	// même chose mais plus générale
 	maj_site_externe : function (site) {
 		var url;
 		unsafeWindow.sab_cache.set_domaine("reglages");
@@ -1429,6 +1427,7 @@ unsafeWindow.sab_resume_ville = {
 		$sab("#sab_maj_"+site).append("<span class='sab_info_temp_"+site+"'><img src='http://data.hordes.fr/gfx/design/loading.gif' height='17px' width='17px'/></span>");
 		return true;
 	},
+	// fin de la MAJ, dispartion de l'icone de chargement
 	valide_maj_externe : function (site) {
 		$sab('.sab_info_temp_'+site).remove();
 	}
@@ -1436,22 +1435,17 @@ unsafeWindow.sab_resume_ville = {
 
 // Page chantiers
 unsafeWindow.sab_chantiers = {
-	creer_boutons : function () {
-		// if ($sab("#sab_options_chantier").length == 0) {
+	creer_boutons : function () { // non appelée désormais, fonction de création des anciens boutons sur la page de chantier. Ceci est géré en options actuellement
 		if (($sab(".bvote ul.tabs").length > 0) && !$sab(".bvote ul.tabs").attr("sab_loaded"))  {
 			$sab(".bvote ul.tabs").attr("sab_loaded",true)
 			unsafeWindow.sab_cache.set_domaine("reglages");
 			var checked = unsafeWindow.sab_cache.get_long_term('ressources_affichees');
-			// if (checked == null) {
-				// checked = false;
-				// unsafeWindow.sab_cache.set_long_term('ressources_affichees',false);
-			// }
-			// $sab("#generic_section div.bvote ul.tabs").before("<div class='reco' id='sab_options_chantier'>Chantiers <input type='checkbox' checked disabled/>Disponibles <input name='sab_chantiers_indispos' type='checkbox' onchange='sab_chantiers.afficher_indisponibles(this)' onmouseout='js.HordeTip.hide(event)' onmouseover='js.HordeTip.showHelp(this,\"Attention! opération lourde, bloque la page quelques instants.\");'/>A débloquer<br/><input type='checkbox' "+(checked ? "checked " : "")+"onchange='sab_chantiers.afficher_bloques($sab(this).prop(\"checked\"))'/>Afficher toutes les ressources</div>");
 			if (checked == 1) {
 				window.setTimeout("sab_chantiers.afficher_bloques(true)",500);
 			}
 		}
 	},
+	// toggle des chantiers encore non découverts, ou construction initiale selon le cas.
 	afficher_indisponibles : function (afficher) {
 		if ($sab(afficher).prop('checked')) {
 			if ($sab(".sab_chantier_non_dispo").length > 0) {
@@ -1463,6 +1457,7 @@ unsafeWindow.sab_chantiers = {
 			$sab(".sab_chantier_non_dispo").css({display:'none'});
 		}
 	},
+	// toggle ou construction des ressources et PA des chantiers non disponibles
 	afficher_bloques : function (afficher) {
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		if (afficher) {
@@ -1477,6 +1472,7 @@ unsafeWindow.sab_chantiers = {
 			$sab(".sab_chantier_bloques").css({display:'none'});
 		}
 	},
+	// construction des chantiers non disponibles (manque le chantier de base)
 	construire_bloques : function () {
 		this.load_chantiers();
 		unsafeWindow.sab_cache.set_domaine("xml_hordes");
@@ -1506,6 +1502,7 @@ unsafeWindow.sab_chantiers = {
 			}
 		});
 	},
+	// construction des chantiers non découverts
 	construire_indisponibles : function () {
 		if (typeof(this.infos_chantiers) == "undefined") {
 			this.load_chantiers();
@@ -1518,6 +1515,7 @@ unsafeWindow.sab_chantiers = {
 				unsafeWindow.sab_chantiers.construire_ligne(chantier.id,niveau_atelier);
 		});
 	},
+	// construction d'une des lignes de chantier s'il n'existe pas encore, retourne la ligne dans tous les cas
 	construire_ligne : function (chantier,niveau_atelier) {
 		chantier = this.infos_chantiers[chantier];
 		if (typeof(chantier) == "undefined")
@@ -1532,13 +1530,16 @@ unsafeWindow.sab_chantiers = {
 		$sab(this.construire_ligne(chantier.parent,niveau_atelier)).after(el);
 		return el;
 	},
+	// retourne si oui ou non un chantier donné est actuellement construit (en HTML) sur la page
 	tr_chantier_est_construit : function (chantier) {
 		return chantier.element || $sab(".sab_taged_chantier_"+chantier.id)[0] || $sab("#generic_section div.bvote tr.building:has(strong:econtains('"+chantier.name+"'))")[0];
 	},
+	// retour l'ensemble des informations d'un chantier
 	infos_chantier : function (chantier) {
 		var id_chantier = parseInt(chantier.id);
 		return (!this.infos_chantiers[id_chantier].categorie) ? this.remonter_parents(this.infos_chantiers[id_chantier]) : this.infos_chantiers[id_chantier];
 	},
+	// construit une des ligne d'un chantier
 	construire_tr_chantier : function (chantier,niveau_atelier) {
 		var datas = this.infos_chantier(chantier);
 		var sortie = $sab("<tr>").addClass("building").addClass("sab_chantier_non_dispo").addClass("sab_taged_chantier_"+datas.id);
@@ -1570,6 +1571,7 @@ unsafeWindow.sab_chantiers = {
 		sortie.append($sab('<td class="act" style="background-color:#7E4D2A !important">&nbsp;</td>'));
 		return sortie;
 	},
+	// retourne la valeur effecive en PA d'un chantier en fn de l'atelier
 	valeur_pa : function (pa_base,atelier) {
 		var prct = 1;
 		switch (parseInt(atelier)) {
@@ -1583,6 +1585,7 @@ unsafeWindow.sab_chantiers = {
 		return Math.ceil(prct*pa_base);
 	},
 	// private, transforme la BDD chantier en un array, index = id_chantier
+	// a optimiser, c'est ce qui fait ramer cette page
 	load_chantiers : function () {
 		this.infos_chantiers = new Array();
 		var chantier;
@@ -1590,12 +1593,9 @@ unsafeWindow.sab_chantiers = {
 			unsafeWindow.sab_chantiers.infos_chantiers[parseInt(chantier.id)] = chantier;
 			$sab("#generic_section div.bvote tr.building:has(strong:econtains('"+chantier.name+"'))").addClass("sab_taged_chantier_"+chantier.id);
 		});
-		// while (chantier = unsafeWindow.detail_chantiers.pop()) {
-			// this.infos_chantiers[parseInt(chantier.id)] = chantier;
-			// $sab("#generic_section div.bvote tr.building:has(strong:econtains('"+chantier.name+"'))").addClass("sab_taged_chantier_"+chantier.id);
-		// }
 		return this.infos_chantiers;
 	},
+	// récupère le chantier parent d'un chantier donné (celui duquel il dépend). complète les infos des chantiers au dessus de lui au passage
 	remonter_parents : function (chantier) {
 		if (parseInt(chantier.parent) == 0) {
 			this.infos_chantiers[parseInt(chantier.id)].nb_parents = 0;
@@ -1617,43 +1617,41 @@ unsafeWindow.sab_chantiers = {
 
 // Page outremonde, nombreux modules
 unsafeWindow.sab_outside = {
-	creer_menu : function () {
+	creer_menu : function () { // créé le menu "outside" s'il n'y est pas
 		if (($sab("#generic_section div.right:has(ul.outInv)").length > 0) && ($sab("#sab_outside_menu").length == 0)) {
 			$sab("#generic_section div.right:has('ul.outInv')").after(this.creer_boutons());
 			// this.charger_contenu('charger_maj_externes');
 		}
 	},
+	// créé les boutons du menu "outside"
 	creer_boutons : function () {
 		var reglages = unsafeWindow.sab_options.charger_reglages();
-		// console.log(reglages.meta_notif);
 		if (reglages.meta_notif)
 			unsafeWindow.sab_metacoa.check_last_msg(function(retour) {
 				if (typeof(retour.last_msg) != "undefined") {
-					// $sab.each(retour.last_msg,function(x,id) {
-					
-					// }
-					// console.log(reglages.meta_notif);
 					if (retour.last_msg.length>0) {
 						var bouton_2 = unsafeWindow.sab_metacoa.icone_last_msg();
-						// if (bouton_2 != "")
-							// bouton_2 = $sab("<li>").append($sab("<a style='cursor:pointer' onclick='sab_metacoa.charger_onglet()'> Nouveaux messages dans vos MétaCoas !</a>").prepend(bouton_2));
 						$sab("#sab_hook_outside_meta").prepend(bouton_2);
 					}
 				}
 			});
-		// return $sab('<div class="clear"></div><ul id="sab_outside_menu" class="tabs" style="margin-bottom:0;">'+(reglages.meta_actif ? '<li id="sab_hook_outside_meta"><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_metacoa.charger_onglet()">MétaCoa</a></li>' : '' )+'<li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_banque\')">Banque</span></li><li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_attaque\')">Défense/attaque</span></li><li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_annuaire\')">Citoyens</span></li></ul><div id="sab_outside_content" style="padding : 5px;margin-bottom : 7px;text-align : justify;background-color : #9A8652;-moz-border-radius : 10px"></div>');
+		// a réécrire en jquery un de ces 4...
 		return $sab('<div class="clear"></div><ul id="sab_outside_menu" class="tabs" style="margin-bottom:0;">'+(reglages.meta_actif ? '<li id="sab_hook_outside_meta"><a style="cursor:pointer" onclick="sab_metacoa.charger_onglet();">MétaCoa</a></li>' : '' )+'<li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_banque\')">Banque</span></li><li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_attaque\')">Défense/attaque</span></li><li><a href="'+window.location.hash+'" style="cursor:pointer" onclick="sab_outside.marquer_onglet(this);sab_outside.charger_contenu(\'charger_annuaire\')">Citoyens</span></li></ul><div id="sab_outside_content" style="padding : 5px;margin-bottom : 7px;text-align : justify;background-color : #9A8652;-moz-border-radius : 10px"></div>');
 	},
+	// chargement d'un des onglet
 	charger_contenu : function (fonction) {
 		$sab("#sab_outside_content").html(this[fonction]());
 	},
+	// mise à jour des onglets pour choisir celui actuellement selected
 	marquer_onglet : function (onglet) {
 		$sab(".selected",$sab(onglet).parent().parent()).removeClass("selected");
 		$sab(onglet).parent().addClass("selected");
 	},
+	// insère le contenu de l'onglet
 	append_contenu : function (contenu) {
 		$sab("#sab_outside_content").html(contenu);
 	},
+	// mises à jour des sites externe, cette fonction est actuellement non apellée en attente de reprogrammation de la fn de MAJ des sites ext.
 	charger_maj_externes : function () {
 		return ($sab("Mises à jour sites externes temporairement désactivée"));
 		// unsafeWindow.sab_cache.set_domaine("reglages");
@@ -1662,6 +1660,7 @@ unsafeWindow.sab_outside = {
 			// return $sab("<span>Pour afficher cet onglet, veuillez activer le script dans <a href='/#ghost/city?go=ghost/options'>les réglages</a>.</span>");
 		// return $sab("Mise à jour des sites : <a class='inlineButton' id='sab_maj_BBH' onclick='sab_resume_ville.maj_site_externe(\"BBH\");'>BBH</span> <a class='inlineButton' id='sab_maj_OOEV' onclick='sab_resume_ville.maj_site_externe(\"OOEV\");'>OOEV</span> <a class='inlineButton' id='sab_maj_PATA' onclick='sab_resume_ville.maj_site_externe(\"PATA\");'>Patamap</span> <a class='inlineButton' onclick='sab_resume_ville.maj_site_externe(\"PATA\");sab_resume_ville.maj_site_externe(\"OOEV\");sab_resume_ville.maj_site_externe(\"BBH\");'>Les 3</span>");
 	},
+	// chargmeent de l'onglet banque
 	charger_banque : function () {
 		var retour = $sab("<ul class='tools shortTools nada cityInv stocks' id='sab_banque' style='margin-bottom:0;display:inline-block;width:305px;max-height:300px !important;overflow-y:scroll;vertical-align:top;'><li class='clear'></li></ul><ul id='sab_log' class='logs' style='width:235px;display:inline-block;max-height:290px !important;margin-left:5px;vertical-align:top;'></ul>");
 		// unsafeWindow.sab_cache.set_domaine("xml_hordes");
@@ -1678,6 +1677,7 @@ unsafeWindow.sab_outside = {
 		}
 		return this.afficher_banque(retour);
 	},
+	// affichage du contenu de la banque
 	afficher_banque : function (hook) {
 		if (hook == null)
 			hook = $sab("#sab_banque,#sab_log");
@@ -1702,37 +1702,9 @@ unsafeWindow.sab_outside = {
 			$sab("."+details_item.categorie,hook_banque).next().after(nouvel_objet);
 		});
 		hook = unsafeWindow.sab_logs.construire_logs(hook,false);
-		// var historique = unsafeWindow.sab_cache.get_long_term("historique");
-		// var horaire_precedent = 0;
-		// if(historique == null) historique = new Array();
-		// $sab.each(historique,function(x,data) {
-			// if (data.date != horaire_precedent) {
-				// var date = new Date(horaire_precedent);
-				// if (horaire_precedent != 0)
-					// hook.last().prepend("<li class='silenceSeparator'>"+(date.getHours()<10?"0"+date.getHours():date.getHours())+"h"+(date.getMinutes()<10?"0"+date.getMinutes():date.getMinutes())+"</li>");
-				// horaire_precedent = data.date;
-			// }
-			// if (data.item) {
-				// var details_item = unsafeWindow.detail_items_bbh[data.item];
-				// data.com = parseInt(data.com);
-				// hook.last().prepend("<li class=entry><strong class='tool'><img alt='item' src='"+iconurl+"item_"+details_item.img+".gif'/> "+details_item.nom+"</strong> <span style='font-weight:bold;color:"+(data.com > 0 ? "green'>+" : "red'>")+data.com+"</span></li>");
-			// } else if (data.building) {
-				// sab_chantiers.load_chantiers();
-				// var details_building = unsafeWindow.sab_chantiers.infos_chantier({id:data.building});
-				// hook.last().prepend("<li class='entry CL_OutsideChat'><strong class='tool'><img alt='building' src='"+iconurl+details_building.img+".gif'/> "+details_building.name+"</strong> : "+data.com+" !</li>");
-			// } else if (data.def) {
-				// hook.last().prepend("<li class='entry CL_OutsideTempEvent'><img src='/gfx/icons/small_def.gif' alt='def'> "+data.com+"</li>");
-			// } else if (data.puits) {
-				// hook.last().prepend("<li class='entry CL_OutsideTempEvent'><img src='/gfx/icons/small_water.gif' alt='eau'> <span style='font-weight:bold;color:"+(data.puits > 0 ? "green'>+" : "red'>")+data.puits+"</span> eau au puits</li>");
-			// } else {
-				// hook.last().prepend("<li class=entry>"+data.com+"</li>");
-			// }
-		// });
-		// var date = new Date(horaire_precedent);
-		// if (horaire_precedent != 0)
-			// hook.last().prepend("<li class='silenceSeparator'>"+(date.getHours()<10?"0"+date.getHours():date.getHours())+"h"+(date.getMinutes()<10?"0"+date.getMinutes():date.getMinutes())+"</li>");
 		return hook;
 	},
+	// chargement de l'onglet attaque
 	charger_attaque : function () {
 		if (unsafeWindow.sab_xml_hordes.est_autorise()) {
 			// unsafeWindow.sab_cache.set_domaine("xml_hordes");
@@ -1748,6 +1720,7 @@ unsafeWindow.sab_outside = {
 			return $sab("<span>Pour afficher cet onglet, veuillez activer le script dans <a href='/#ghost/city?go=ghost/options'>les réglages</a>.</span>");
 		}
 	},
+	// construction et affichage de l'onglet attaque
 	afficher_attaque : function () {
 		unsafeWindow.sab_cache.set_domaine("xml_hordes");
 		var attaque = unsafeWindow.sab_cache.get("attaque");
@@ -1796,6 +1769,7 @@ unsafeWindow.sab_outside = {
 		return this.append_contenu($sab(retour));
 	
 	},
+	// chargement de l'annuaire
 	charger_annuaire : function () {
 		if (unsafeWindow.sab_xml_hordes.est_autorise()) {
 			// unsafeWindow.sab_cache.set_domaine("xml_hordes");
@@ -1811,6 +1785,7 @@ unsafeWindow.sab_outside = {
 			return $sab("<span>Pour afficher cet onglet, veuillez activer le script dans <a href='/#ghost/city?go=ghost/options'>les réglages</a>.</span>");
 		}
 	},
+	// construction et affichage de l'annuaire
 	afficher_annuaire : function () {
 		unsafeWindow.sab_cache.set_domaine("xml_hordes");
 		var annuaire = unsafeWindow.sab_cache.get_long_term("annuaire");
@@ -1843,6 +1818,7 @@ unsafeWindow.sab_outside = {
 		this.append_contenu(sortie);
 		// _tid.checkUsers();
 	},
+	// image du métier choisi en fonction du nom du métier, pour l'annuaire
 	image_job : function (job) {
 		var img = $sab("<img>");
 		switch(job) {
@@ -1880,6 +1856,7 @@ unsafeWindow.sab_outside = {
 
 // Page gazette
 unsafeWindow.sab_logs = {
+	// fonctions de manipulation du log hordes
 	masquer_tous : function () {
 		$sab("ul.logs .entry").css({display:'none'});
 	},
@@ -1892,6 +1869,7 @@ unsafeWindow.sab_logs = {
 	afficher_categorie : function (categorie) {
 		$sab("ul.logs .CL_"+categorie).css({display:''});
 	},
+	// fonction d'affichage de tous les éléments "eau" dans le log hordes
 	afficher_eau : function () {
 		this.masquer_tous();
 		this.afficher_item("water");
@@ -1903,13 +1881,14 @@ unsafeWindow.sab_logs = {
 		this.afficher_categorie("Well");
 	},
 	analyse_eau : function () {
-		this.afficher_eau();
-		$sab("ul.logs .entry:visible")
+		this.afficher_eau(); // useless? nooooooooon si peu...
 	},
+	// retourne le nom conventionnel d'un item donné
 	extraire_nom_item : function (img) {
 		var reg_src_item = /\/item_(.*).gif/;
 		return reg_src_item.exec($sab(img).attr("src"))[1]
 	},
+	// créé la liste de tous les items  présent dans le log hordes pour générer notre select
 	creer_liste_items : function () {
 		var liste_items = new Array();
 		var items_vus = new Array();
@@ -1943,6 +1922,7 @@ unsafeWindow.sab_logs = {
 		$sab(".logControl").after(hook);
 		this.construire_logs(hook,false);
 	},
+	// construit les logs (alertes). recent = true n'affiche que les logs non cliqués comme "Lu". recent = false affiche tout l'historique
 	construire_logs : function (hook,recent) {
 		if (unsafeWindow.sab_xml_hordes.est_autorise()) {
 			if (!unsafeWindow.sab_xml_hordes.est_a_jour()) return hook;
@@ -1998,6 +1978,7 @@ unsafeWindow.sab_logs = {
 		
 		return hook;
 	},
+	// onchange du select que l'on rajoute au log hordes
 	filtrer : function (item) {
 		if (item == '')
 			return this.afficher_tous();
@@ -2006,10 +1987,7 @@ unsafeWindow.sab_logs = {
 		this.masquer_tous();
 		this.afficher_item(item);
 	},
-	// alertes_actives : function () {
-		// unsafeWindow.sab_cache.set_domaine("reglages");
-		// return unsafeWindow.sab_cache.get_long_term("log_alertes_actif") ? true : false;
-	// },
+	// affiche le cadre d'alerte et le rempli ou le complète selon le cas
 	afficher_alertes : function () {
 		var hook = ($sab("#sab_cadre_alerte").length == 0) ? $sab("<ul id='sab_cadre_alerte' class='logs' style='width:250px;max-height:110px !important;position:absolute;margin-top:-210px;margin-left:25px;width:'></ul>") : $sab("#sab_cadre_alerte");
 		if($sab("li",hook).length > 0)
@@ -2022,6 +2000,7 @@ unsafeWindow.sab_logs = {
 			if ($sab("#sab_cadre_alerte").length == 0)
 				$sab('#clock').before(hook);
 	},
+	// ferme l'alerte (si, si)
 	fermer_alerte : function (time) {
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		unsafeWindow.sab_cache.set_long_term("log_alertes",time);
@@ -2031,20 +2010,24 @@ unsafeWindow.sab_logs = {
 
 // Page annuaire et maisons
 unsafeWindow.sab_annuaire = {
+	// appelé à l'affichage de l'annuaire. sauvegarde l'ordre actuel d'affichage des maisons, et leurs liens
 	sauvegarder_ordre_citoyens : function () {
 		unsafeWindow.sab_cache.set_domaine("annuaire");
 		var ordre_citoyens = unsafeWindow.sab_cache.get('ordre_citoyens');
 		if (ordre_citoyens == null) {
 			ordre_citoyens = Array();
-			$sab.each($sab("div.citizens table.large tr:not(:has(img[src*='small_death'])) .msg"),function (x,td) {
+			// $sab.each($sab("div.citizens table.large tr:not(:has(img[src*='small_death'])) .msg"),function (x,td) {
+			$sab.each($sab("div.citizens table.large tr .msg"),function (x,td) {
 				ordre_citoyens.push($sab(td).attr("onclick").match(/\?id=([0-9]+);/)[1]);
 			});
 		}
 		unsafeWindow.sab_cache.set('ordre_citoyens',ordre_citoyens);
 	},
+	// retourne l'identifiant de la maison actuellement visitée
 	identifier_maison : function () {
 		return $sab("div.clint ul.tabs li.selected a").attr("onclick").match(/\?id=([0-9]+);/)[1];
 	},
+	// ajoute les bouton "suivant" et "précédent" lors de la visite d'une maison
 	ajouter_boutons : function () {
 		unsafeWindow.sab_cache.set_domaine("annuaire");
 		var ordre_citoyens = unsafeWindow.sab_cache.get('ordre_citoyens');
@@ -2068,10 +2051,12 @@ unsafeWindow.sab_annuaire = {
 
 // Module de méta coalition
 unsafeWindow.sab_metacoa = {
+	// variables de travail
 	datas : {
 		meta_actuelle : false,
 		metas : new Array(),
 	},
+	// construction de l'onglet métacoa (ajout après l'onglet coa, pas le contenu de l'onglet)
 	creer_onglet : function () {
 		var reglages = unsafeWindow.sab_options.charger_reglages();
 		if (reglages.meta_actif)
@@ -2090,7 +2075,9 @@ unsafeWindow.sab_metacoa = {
 					});
 			}
 	},
+	// charge le contenu de l'onglet métacoa si on est sur la bonne page. redirige sinon
 	charger_onglet : function (id_meta) {
+		// détection de la page actuelle et redirection/chargement si besoin est.
 		if (typeof(id_meta)!="undefined") {
 			unsafeWindow.sab_cache.set_domaine("metacoa");
 			unsafeWindow.sab_cache.set_long_term("id",id_meta);
@@ -2105,30 +2092,21 @@ unsafeWindow.sab_metacoa = {
 		} else {
 			unsafeWindow.sab_cache.set("redirect",false);
 		}
-		// if (($sab("#ghost_pages").length == 0) && unsafeWindow.location.href.match(/go=outside\//)) {
-			// $sab("#gameLayout").removeClass("outside").addClass("ghostLayout");
-			// $sab("#gameLayout tr").html("").append("<td class='leftPanel'><div id='ghost_pages'><div class='clear'></div></td><td class='rightPanel' style='width:238px;'></td>");
-		// }
+		
+		// début de l'affichage
 		$sab("#ghost_pages ul.tabs li.selected").removeClass("selected");
 		$sab("#sab_onglet_metacoa").addClass("selected");
 		var clear = $("#ghost_pages .clear").first();
 		
 		while (clear.next().length > 0) clear.next().remove();
 		
-		// unsafeWindow.sab_cache.set_domaine("metacoa");
-		// var id_meta = unsafeWindow.sab_cache.get_long_term("id");
-		// if (id_meta) {
-			// unsafeWindow.sab_metacoa.charger_infos_coa(false,unsafeWindow.sab_metacoa.completer_onglet);
-			// var onglet = $sab("<div id='sab_contenu_metacoa' class='gteam'>Chargement en cours ...<br/></div>");
-			// onglet.append("<a onclick='sab_metacoa.quitter_meta();return false;' class='inlineButton'>Quitter ma métacoa</a>");
-		// } else {
-			// onglet.append("Chargement en cours ...");
-		// }
 		var onglet = $sab("<div id='sab_contenu_metacoa' class='gteam'>");
 		$sab("#ghost_pages .clear").first().after(onglet);
 		unsafeWindow.sab_metacoa.charger_infos_coa('full',unsafeWindow.sab_metacoa.completer_onglet);
 		return false;
 	},
+	// on charge l'onglet. mode = full, chat_only, jump_only. cette fn est appelée à différents endroits faisant appel à la méta.
+	// chat_only correspond au rechargement du chat, jump à la page de choix de ville, full à l'onglet complet
 	charger_infos_coa : function (mode,callback) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -2161,15 +2139,16 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// bouton "Lu" de l'annonce générale en haut de l'onglet métaCoa
 	fermer_annonce_generale : function (id) {
 		$("#sab_annonce_generale").remove();
 		unsafeWindow.sab_cache.set_domaine("reglages");
 		unsafeWindow.sab_cache.set_long_term('id_last_news',id);
 	},
+	// complète l'onglet métaCoa en fonction du retour serveur.
 	completer_onglet : function (retour) {
 		var reglages = unsafeWindow.sab_options.charger_reglages();
 		$sab('#sab_onglet_metacoa')
-			// .prepend(unsafeWindow.sab_metacoa.icone_last_msg(retour.last_msg))
 			.parent().css({"margin-bottom":"0px"});
 		if (!retour.chat_only) $sab("#sab_contenu_metacoa").html("");
 		unsafeWindow.sab_cache.set_domaine("reglages");
@@ -2178,7 +2157,6 @@ unsafeWindow.sab_metacoa = {
 			$sab("#sab_contenu_metacoa").append("<div class='help' id='sab_annonce_generale'><a class='inlineButton' onclick='sab_metacoa.fermer_annonce_generale("+retour.message_general.id+")'>Lu</a> "+retour.message_general.txt+"</div>");
 		}
 		$sab("#sab_contenu_metacoa").append(unsafeWindow.sab_metacoa.completer_onglet_tabs(retour));
-		// $sab("#sab_onglet_meta_"+(retour.id_meta ? retour.id_meta : 0)).addClass("selected");
 		if(!retour.jump_only) {
 			if (retour.id_meta) {
 				unsafeWindow.sab_metacoa.completer_onglet_avec_coa(retour);
@@ -2187,6 +2165,7 @@ unsafeWindow.sab_metacoa = {
 			}
 		}
 	},
+	// création du menu d'onglets pour choisir sa méta actuelle
 	completer_onglet_tabs : function (infos_meta) {
 		var retour = $sab("<ul id='sab_barre_onglets_meta'>")
 			.addClass("tabs")
@@ -2216,19 +2195,9 @@ unsafeWindow.sab_metacoa = {
 			}
 			retour.append(onglet);
 		});
-		
-		// if (infos_meta.last_msg) {
-			// $sab.each(infos_meta.last_msg,function(x,id) {
-				// $sab("#sab_onglet_meta_"+id).prepend(unsafeWindow.sab_metacoa.icone_last_msg());
-			// })
-			// if ($sab(".sab_img_nv_msg").length == 0)
-				// $sab("#sab_onglet_metacoa").prepend(unsafeWindow.sab_metacoa.icone_last_msg());
-		// }
-				
-		// $sab("#sab_barre_onglets_meta .selected").removeClass("selected");
-		
 		return retour;
 	},
+	// construction d'une ligne de chat
 	construire_ligne_chat : function (info,last_affichage) {
 		var ligne = $sab("<li>")
 			.append("<em>["+info.date+"]</em> ");
@@ -2239,7 +2208,6 @@ unsafeWindow.sab_metacoa = {
 		}
 		if (/\[img=([^\]]+)\]/.test(info.message)) {
 			var donnees_img = info.message.match(/\[img=([^\]]+)\]/);
-			// info.message = info.message.replace(donnees_lien[0],"<img src='"+donnees_lien[1]+"' style='height:18px' onclick='sab_metacoa.toggle_image(this)' >"+donnees_lien[2]+"</a>");
 			info.message = info.message.replace(donnees_img[0],$sab("<span>").append($sab("<a>")
 				.attr({
 					"href" : donnees_img[1],
@@ -2267,6 +2235,8 @@ unsafeWindow.sab_metacoa = {
 			.end();
 		return ligne;
 	},
+	// liste des émotes et des fonctions d'affichages, ainsi que du logo à faire apparaitre dans la liste d'émotes
+	// les ids >=100 sont des émotes spéciales (nouveau membre, candidature, ...)
 	emotes : new Array(
 		{id:0, img : "/gfx/forum/smiley/h_chat.gif", aff :function(info,emote) {return "<img src='"+emote.img+"'/> <strong>"+info.username+" :</strong> « "+info.message+" »";},patern : 'normal'},
 		{id:10, img : "/gfx/forum/smiley/h_arrow.gif", patern : "fleche"},
@@ -2303,11 +2273,13 @@ unsafeWindow.sab_metacoa = {
 			return "<img src='"+emote.img+"'/> Pouf le <strong>"+details_msg[1]+"</strong> ! On dirait bien que <strong>"+details_msg[0]+"</strong> l'a viré !";
 		}}
 	),
+	// complète le texte actuel en fonction de l'émote sélectionnée.
 	ajoute_emote_shoutbox : function (admin, patern) {
 		var clef = admin ? "#sab_input_shoutbox_admin" : "#sab_input_shoutbox";
 		$sab(clef).prop('value','/'+patern+' '+$(clef).prop('value'));
 		$sab(clef).focus();
 	},
+	// hover des émotes dans le choix de l'émote. si maj, alors clignotement de l'émote choisie (onclick)
 	maj_apercu_emote : function(admin, id, maj) {
 		
 		var clef = admin ? "#sab_apercu_emote_admin" : "#sab_apercu_emote";
@@ -2326,6 +2298,7 @@ unsafeWindow.sab_metacoa = {
 			$sab(admin ? "#sab_input_shoutbox_admin" : "#sab_input_shoutbox").focus();
 		}
 	},
+	// input texte et liste d'émotes pour les shoutbox
 	menu_chat : function (admin) {
 		var form = $sab("<form>")
 			.attr("onsubmit","sab_metacoa.envoyer_message("+(admin ? "true" : "false")+");return false;")
@@ -2349,7 +2322,6 @@ unsafeWindow.sab_metacoa = {
 				'border': '1px solid black',
 				"vertical-align": "top",
 			}).attr({
-				// "onclick" : "sab_metacoa.ajoute_emote_shoutbox(false,\""+emote.patern+"\");sab_metacoa.maj_apercu_emote(false,"+emote.id+",true)",
 				"onclick" : "sab_metacoa.maj_apercu_emote("+(admin ? "true" : "false")+","+emote.id+",true)",
 				"onmouseover" : "sab_metacoa.maj_apercu_emote("+(admin ? "true" : "false")+","+emote.id+",false)",
 				"onmouseout" : "sab_metacoa.maj_apercu_emote("+(admin ? "true" : "false")+",false,false)",
@@ -2359,14 +2331,14 @@ unsafeWindow.sab_metacoa = {
 		});
 		return [form,menu_emotes];
 	},
+	// créé le contenu de l'onglet si méta actuellement sélectionnée
 	completer_onglet_avec_coa : function (infos_meta) {
 		// console.log("complétion avec meta : ",infos_meta);
 		unsafeWindow.sab_cache.set_domaine("metacoa");
 		var last_affichage = infos_meta.last_affichage;
-		// var last_affichage = unsafeWindow.sab_cache.get_long_term("dernier_affichage");
-		// unsafeWindow.sab_cache.set_long_term("dernier_affichage",infos_meta.last_msg);
 		$sab("#sab_onglet_meta_"+infos_meta.id_meta+" .sab_img_nv_msg").remove();
 		if (infos_meta.chat_only) {
+			// si on ne fait que rechargement le chat
 			var historique_chat = $sab("#sab_metacoa_shoutbox");
 			if (historique_chat.length > 0) {
 				historique_chat.children().remove();
@@ -2382,8 +2354,9 @@ unsafeWindow.sab_metacoa = {
 				});
 			}
 		} else {
+			// si c'est un chargement complet
 			var onglet = $sab("#sab_contenu_metacoa");
-			// onglet.html("");
+			// titre
 			var titre = $sab("<h2>");
 			titre.append("MétaCoa [<span id='sab_metacoa_name' style='color:white !important'>"+infos_meta.nom_meta+"</span>]");
 			if (infos_meta.responsable)
@@ -2391,6 +2364,7 @@ unsafeWindow.sab_metacoa = {
 			onglet.append(titre);
 			onglet.append("<div class='clear'></div>");
 			
+			// news de la méta
 			if (infos_meta.news != "") {
 				var news = $sab("<div class='critical'>"+infos_meta.news+"</div>");
 				if (infos_meta.id_rang<3)
@@ -2410,6 +2384,7 @@ unsafeWindow.sab_metacoa = {
 				.css({
 					"margin-top" : "0px"
 				});
+			// shoutbox normale
 			left.append("<h2>Shoutbox de la MétaCoa</h2>")
 			left.append($sab("<a>actualiser</a>")
 				.attr({
@@ -2440,12 +2415,13 @@ unsafeWindow.sab_metacoa = {
 					"width": "230px",
 					"margin-top" : "0px"
 				});
-			
+			// mini menu droite pour l'admin
 			var news = $sab("<div class='tid_streamList'>");
 			if (infos_meta.responsable)
 				news.append("<div class='tid_streamItem' style='width:95% !important;text-align:center'>Vous êtes le responsable de cette Métacoa.</div>");
 			right.append(news);
 			
+			// liste des membres
 			var titre_membres = $sab("<h2>Membres</h2>");
 			var membres = $sab("<ul id='sab_metacoa_membres' style='display:inline-block;width:180px;max-height: 320px !important;'>");
 			if (infos_meta.membres)
@@ -2483,12 +2459,7 @@ unsafeWindow.sab_metacoa = {
 					.css({
 						"margin-top" : "0px"
 					});
-				// left.append($sab("<form>")
-					// .attr("onsubmit","sab_metacoa.envoyer_message(true);return false;")
-					// .append("<input type='submit' value='Envoyer' name='submit' class='button'>")
-					// .append("<input type='text' id='sab_input_shoutbox_admin' value='' class='field' name='message' maxlength='255'>")
-				// );
-				
+				// chat admin
 				var menu_chat = unsafeWindow.sab_metacoa.menu_chat(true)
 				left.append(menu_chat[0]);
 				left.append(menu_chat[1]);
@@ -2501,7 +2472,7 @@ unsafeWindow.sab_metacoa = {
 				admin.append(left);
 				
 				var right = $sab("<div class='right' style='overflow-y:scroll;height: 440px !important;'></div>");
-				
+				// recrutements
 				var recrutements_actifs = $sab("<div>Recrutements : </div>")
 					.append($sab("<a class='inlineButton'>"+(infos_meta.recrutement_actif ? "Ouverts" : "Fermés")+"</a>")
 						.attr({
@@ -2533,7 +2504,7 @@ unsafeWindow.sab_metacoa = {
 							"style" : "cursor : pointer"
 						}));
 				right.append(annonce_recrutement);
-				
+				// candidatures
 				var titre_candidats = $sab("<h2>Candidats</h2>");
 				titre_candidats.append($sab("<a>")
 					.attr({
@@ -2572,6 +2543,7 @@ unsafeWindow.sab_metacoa = {
 			
 		}
 	},
+	// complétion de l'onglet sans coa : liste des coas dispos et création de la sienne
 	completer_onglet_sans_coa : function (infos) {
 		var onglet = $sab("#sab_contenu_metacoa");
 		// onglet.html("");
@@ -2580,6 +2552,7 @@ unsafeWindow.sab_metacoa = {
 		onglet.append(titre);
 		onglet.append("<br/>");
 		
+		// traitement des candidatures actuelles : en attente de réponse, refusée, invitations
 		if (infos.candidatures.length > 0) {
 			var liste_candidatures = $sab("<table class='table' style='text-align:center;width :628px !important'>");
 			liste_candidatures.append("<tr><th>Nom de la MétaCoa</th><th>Dernier changement</th><th>Etat de votre candidature</th><th></th></tr>");
@@ -2659,36 +2632,22 @@ unsafeWindow.sab_metacoa = {
 			});
 			onglet.append(liste_candidatures);
 		}
+		// liste des métas disponibles et recrutant actuellement
 		var liste_metas = $sab("<table class='table' style='text-align:center;width :628px !important'>");
 		liste_metas.append("<tr><th>Nom</th><th>Responsable</th><th>Membres</th><th>Annonce</th><th></th></tr>");
-		// console.log("ids candidatures : ",ids_candidature);
-		// console.log("infos.metas : ",infos.metas);
 		unsafeWindow.sab_cache.set_domaine("reglages");
-		// console.log("my_metas : ",unsafeWindow.sab_cache.get_long_term("my_metas"));
 		$sab.each(infos.metas,function(x,meta) {
 			unsafeWindow.sab_cache.set_domaine("reglages");
-			// console.log($sab(ids_candidature).filter(function(x,id) {return (id == meta.id_coa)}));
 			if (($sab(ids_candidature).filter(function(x,id) {return (id == meta.id_coa)}).length == 0) && ($sab(unsafeWindow.sab_cache.get_long_term("my_metas")).filter(function(x,m) {return (m.id == meta.id_coa)}).length == 0)) {
-				// console.log("affichage de ",meta);
-			// inArray(meta.id_coa,unsafeWindow.sab_cache.get("my_metas"))<0)){
 				var ligne_meta = $sab("<tr>");
 				ligne_meta.append("<td><em>"+meta.nom+"</em></td>");
 				ligne_meta.append("<td><a target='_blank' href='/#ghost/city?go=ghost/user?uid="+meta.id_responsable+"'>"+meta.responsable+"</a></td>");
 				ligne_meta.append("<td>"+meta.nombre_membres+"</td>");
 				ligne_meta.append("<td>"+meta.annonce+"</td>");
-				// ligne_meta.append($sab("<td style='vertical-align:middle'></td>")
-					// .append($sab("<img/>")
-						// .attr({
-							// "src" : "http://twinoid.com/img/icons/done.png",
-							// "onmouseout" : "js.HordeTip.hide(event)",
-							// "onmouseover" : "js.HordeTip.showHelp(this,'Candidature en cours ...')"
-						// }))
-				// );
 				ligne_meta.append("<td style='vertical-align:middle'><a class='inlineButton' onmouseout='js.HordeTip.hide(event)' onmouseover='js.HordeTip.showHelp(this,&apos;Postuler&apos;)' onclick='sab_metacoa.candidater("+meta.id_coa+");' style='width:10p;'>+</a></td>");
 				liste_metas.append(ligne_meta);
 			}
 		});
-		// console.log("liste metas",liste_metas.children("tr"));
 		if ($sab("tr",liste_metas).length > 1){
 			onglet.append(liste_metas);
 			onglet.append("<br/>");
@@ -2702,6 +2661,7 @@ unsafeWindow.sab_metacoa = {
 			})
 		);
 	},
+	// retrait de la candidature actuelle
 	retirer_candidature : function (id_meta) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -2715,6 +2675,7 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// poster une candidature
 	candidater : function (id_meta) {
 		var texte = prompt("Une petite note d'accompagnement avec votre candidature?");
 		if (texte)
@@ -2731,6 +2692,7 @@ unsafeWindow.sab_metacoa = {
 				}
 			});
 	},
+	// répondre à une candidature
 	repondre_candidature : function (reponse,id_candidat) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -2742,14 +2704,10 @@ unsafeWindow.sab_metacoa = {
 			},
 			success : function (retour) {
 				unsafeWindow.sab_metacoa.charger_onglet();
-				// if (retour.id_meta) {
-					// unsafeWindow.sab_cache.set_domaine("metacoa");
-					// unsafeWindow.sab_cache.set_long_term("id",retour.id_meta);
-					// unsafeWindow.sab_metacoa.charger_onglet();
-				// }
 			}
 		});
 	},
+	// non appelé désormais car passe par système de candidature. Non reconnu par serveur du coup.
 	rejoindre_meta : function (id_meta) {
 		if (confirm("Voulez vous rejoindre cette MétaCoa ?"))
 			unsafeWindow.sab_serveur.execution_identifee({
@@ -2769,6 +2727,7 @@ unsafeWindow.sab_metacoa = {
 				}
 			});
 	},
+	// onsubmit des chats
 	envoyer_message : function (admin) {
 		var message = $sab.trim($sab("#sab_input_shoutbox"+(admin ? "_admin" : ""))[0].value);
 		$sab("#sab_input_shoutbox"+(admin ? "_admin" : ""))[0].value = "";
@@ -2796,6 +2755,7 @@ unsafeWindow.sab_metacoa = {
 			});
 		}
 	},
+	// modifier l'annonce de recrutement
 	modifier_annonce : function () {
 		var texte = prompt("Veuillez saisir votre nouvelle annonce de recrutement. Laissez vide pour annuler.");
 		if (texte.length > 0) 
@@ -2811,6 +2771,7 @@ unsafeWindow.sab_metacoa = {
 				}
 			});
 	},
+	// modifier la news de la métacoa
 	changer_news : function () {
 		var texte = prompt("Veuillez saisir le contenu de votre news. Laissez vide pour annuler.");
 		if (texte && texte.length > 0) 
@@ -2827,6 +2788,7 @@ unsafeWindow.sab_metacoa = {
 			});
 	
 	},
+	// change le statut de recrutement de la métacoa
 	changer_statut_recrutement : function (em) {
 		if ($sab(em).html() == "Ouverts") {
 			unsafeWindow.sab_serveur.execution_identifee({
@@ -2855,6 +2817,7 @@ unsafeWindow.sab_metacoa = {
 		
 		}
 	},
+	// création d'une nouvelle méta
 	creer_meta : function () {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -2871,6 +2834,7 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// quitter sa méta
 	quitter_meta : function () {
 		if (unsafeWindow.confirm("Etes vous sûr de vouloir quiter votre MétaCoa ?"))
 			unsafeWindow.sab_serveur.execution_identifee({
@@ -2888,6 +2852,7 @@ unsafeWindow.sab_metacoa = {
 				}
 			});
 	},
+	// changer le nom de sa méta
 	changer_nom_coa : function () {
 		var nouveau_nom = prompt("Veuillez choisir un nouveau nom pour la MétaCoa. Laissez vide pour annuler.");
 		if (nouveau_nom.length > 0) 
@@ -2903,6 +2868,7 @@ unsafeWindow.sab_metacoa = {
 				}
 			});
 	},
+	// changer le rang d'un des users de la méta
 	modifier_rang : function (id_user) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -2920,6 +2886,7 @@ unsafeWindow.sab_metacoa = {
 		});
 		
 	},
+	// donner le titre de responsable à un des users de la méta
 	nommer_responsable : function (id_user) {
 		if (confirm("Voulez-vous confier la gestion de la MétaCoa à ce membre ? Cette opération est irréversible."))
 			unsafeWindow.sab_serveur.execution_identifee({
@@ -2938,6 +2905,7 @@ unsafeWindow.sab_metacoa = {
 			});
 		
 	},
+	// renvoyer un membre de la méta
 	renvoyer_membre : function (id_user) {
 		if (confirm("Voulez-vous renvoyer ce membre de la MétaCoa ? Cette opération est irréversible."))
 			unsafeWindow.sab_serveur.execution_identifee({
@@ -2955,6 +2923,7 @@ unsafeWindow.sab_metacoa = {
 			});
 		
 	},
+	// complétion de la page âme avec les infos sur les métas du joueur
 	completer_ame : function () {
 		var retour = unsafeWindow.location.href.match(/ghost\/user\?uid=([0-9]+);/);
 		var id_ame = retour[1];
@@ -3041,6 +3010,7 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// inviter quelqu'un dans sa méta.
 	inviter : function (id_user,id_meta) {
 		unsafeWindow.sab_metacoa.datas.meta_actuelle = id_meta;
 		unsafeWindow.sab_serveur.execution_identifee({
@@ -3057,6 +3027,7 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// annuler une invitation
 	annuler_invitation : function (id_user) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -3070,26 +3041,20 @@ unsafeWindow.sab_metacoa = {
 			}
 		});
 	},
+	// liste des jumps : icones de recommandation
 	lister_jumps : function () {
 		if (($sab("#ghostImg img[src='http://data.hordes.fr/gfx/loc/fr/ghost_red.jpg']").length > 0) && unsafeWindow.location.href.match(/ghost\/maps[;?]/)) {// is héros
-			// return unsafeWindow.sab_metacoa.charger_infos_coa(false,unsafeWindow.sab_metacoa.lister_jumps);
 			unsafeWindow.sab_cache.set_domaine("reglages");
 			var my_metas = unsafeWindow.sab_cache.get_long_term("my_metas");
 			if (my_metas == null) {
-				// console.log("Reload : metas non chargées : ",my_metas);
 				unsafeWindow.sab_metacoa.charger_infos_coa('jump_only');
 				return false;
 			}
 			if ($sab(".maps .table tr:not(.locked)").length == 0) {
-				// console.log("Reload : pas de villes",my_metas);
 				window.setTimeout("unsafeWindow.sab_metacoa.lister_jumps()",2000);
 				return false;
 			}
-			// console.log("liste jumps !",my_metas);
 			$sab(".sab_img_jump").remove();
-			// return false;
-			// unsafeWindow.sab_cache.set_domaine("metacoa");
-			// var rang = unsafeWindow.sab_cache.get_long_term("rang",retour.id_rang);
 			$sab.each(my_metas,function(x,meta) {
 				if (meta.rang<3) {
 					$sab(".maps .table tr:not(.locked) td.name").append($sab("<img/>")
@@ -3129,6 +3094,7 @@ unsafeWindow.sab_metacoa = {
 			});
 		}
 	},
+	// onclick d'une recommadnation
 	recommander_jump : function (data) {
 		if (typeof(data.ligne) != "undefined")
 			data.id_jump = $sab("a",$sab(data.ligne).parent()).attr("href").match(/mid=([0-9]+)[;?]/)[1];
@@ -3147,8 +3113,7 @@ unsafeWindow.sab_metacoa = {
 		});
 	
 	},
-	// reload_jump : function () {
-	// },
+	// retourne l'icone a ajouter en cas de nouveau message
 	icone_last_msg : function(new_last) {
 		// unsafeWindow.sab_cache.set_domaine("metacoa");
 		// var last_msg = unsafeWindow.sab_cache.get_long_term("dernier_affichage");
@@ -3157,6 +3122,7 @@ unsafeWindow.sab_metacoa = {
 		// return (last_msg < new_last) ? $sab("<img src='/gfx/design/anim_icon_mail.gif' title='Nouveaux messages !' class='sab_img_nv_msg'/>") : "";
 		return $sab("<img src='/gfx/design/anim_icon_mail.gif' title='Nouveaux messages !' class='sab_img_nv_msg'/>");
 	},
+	// vérifie si il y a ou non des nouveaux messages en métacoa
 	check_last_msg : function (callback) {
 		unsafeWindow.sab_serveur.execution_identifee({
 			url : unsafeWindow.sab_serveur.datas.url_serveur+"metacoa.php",
@@ -3172,12 +3138,14 @@ unsafeWindow.sab_metacoa = {
 }
 
 // BDDs statiques
-if (true) {
+// a mettre à jour
+if (true) { // if true uniquement pour pouvoir replier le bloc
 	unsafeWindow.detail_chantiers = [{"id":"1010","name":"Muraille","categorie":"wall1","parent":"0","def":"10","img":"small_wallimprove","temporaire":"0","plan":"0","ap":"30","items":[{"id":"59","count":"6"},{"id":"60","count":"4"}]},{"id":"1011","name":"Pompe","categorie":"pump","parent":"0","def":"0","img":"small_water","temporaire":"0","plan":"0","ap":"25","items":[{"id":"60","count":"8"},{"id":"84","count":"1"}]},{"id":"1012","name":"Renforts d'urgence","parent":"1074","def":"10","img":"item_wood_plate","temporaire":"1","plan":"0","ap":"30","items":[{"id":"59","count":"8"}]},{"id":"1013","name":"Champs piégés","parent":"1074","def":"15","img":"small_trap","temporaire":"1","plan":"305","ap":"12","items":[{"id":"59","count":"6"}]},{"id":"1014","name":"Guerilla","parent":"1074","def":"35","img":"small_trap","temporaire":"1","plan":"307","ap":"24","items":[{"id":"41","count":"2"},{"id":"59","count":"2"},{"id":"60","count":"1"}]},{"id":"1015","name":"Catapulte primitive","parent":"1050","def":"0","img":"item_courroie","temporaire":"0","plan":"305","ap":"40","items":[{"id":"59","count":"2"},{"id":"60","count":"1"},{"id":"159","count":"1"},{"id":"160","count":"1"}]},{"id":"1019","name":"Tas de détritus","parent":"1074","def":"5","img":"small_dig","temporaire":"1","plan":"0","ap":"10","items":[{"id":"59","count":"2"},{"id":"60","count":"2"}]},{"id":"1020","name":"Purificateur","parent":"1011","def":"0","img":"item_jerrycan","temporaire":"0","plan":"0","ap":"75","items":[{"id":"41","count":"1"},{"id":"59","count":"5"},{"id":"60","count":"6"},{"id":"84","count":"3"}]},{"id":"1021","name":"Boucherie","parent":"1033","def":"0","img":"item_meat","temporaire":"0","plan":"306","ap":"40","items":[{"id":"59","count":"9"},{"id":"60","count":"4"}]},{"id":"1022","name":"Mont pointu","parent":"1019","def":"60","img":"small_dig","temporaire":"1","plan":"305","ap":"40","items":[{"id":"60","count":"2"}]},{"id":"1023","name":"Grand fossé","parent":"1010","def":"10","img":"small_gather","temporaire":"0","plan":"0","ap":"80","items":[{"id":"59","count":"8"}]},{"id":"1024","name":"Muraille rasoir","parent":"1010","def":"50","img":"item_plate","temporaire":"0","plan":"306","ap":"40","items":[{"id":"41","count":"5"},{"id":"60","count":"15"}]},{"id":"1025","name":"Fixations de défenses","parent":"1033","def":"0","img":"item_meca_parts","temporaire":"0","plan":"307","ap":"50","items":[{"id":"41","count":"3"},{"id":"159","count":"7"},{"id":"160","count":"8"}]},{"id":"1026","name":"Potager","parent":"1011","def":"0","img":"item_vegetable_tasty","temporaire":"0","plan":"305","ap":"60","items":[{"id":"1","count":"10"},{"id":"95","count":"1"},{"id":"159","count":"10"}]},{"id":"1027","name":"Fosse à pieux","parent":"1023","def":"25","img":"small_spears","temporaire":"0","plan":"306","ap":"60","items":[{"id":"59","count":"20"}]},{"id":"1028","name":"Barbelés","parent":"1010","def":"5","img":"small_barbed","temporaire":"0","plan":"0","ap":"20","items":[{"id":"60","count":"2"}]},{"id":"1029","name":"Foreuse puits","parent":"1011","def":"0","img":"small_water","temporaire":"0","plan":"305","ap":"60","items":[{"id":"159","count":"7"},{"id":"160","count":"2"}]},{"id":"1030","name":"Projet Eden","parent":"1029","def":"0","img":"small_eden","temporaire":"0","plan":"307","ap":"65","items":[{"id":"73","count":"5"},{"id":"159","count":"5"},{"id":"160","count":"8"}]},{"id":"1031","name":"Remparts avancés","parent":"1010","def":"20","img":"small_wallimprove","temporaire":"0","plan":"305","ap":"40","items":[{"id":"41","count":"6"},{"id":"159","count":"9"},{"id":"160","count":"6"}]},{"id":"1032","name":"Champ mines eau","parent":"1020","def":"115","img":"item_bgrenade","temporaire":"1","plan":"306","ap":"40","items":[{"id":"1","count":"10"},{"id":"60","count":"3"},{"id":"73","count":"1"},{"id":"132","count":"1"}]},{"id":"1033","name":"Atelier","categorie":"command","parent":"0","def":"0","img":"small_refine","temporaire":"0","plan":"0","ap":"25","items":[{"id":"59","count":"10"},{"id":"60","count":"8"}]},{"id":"1034","name":"Piston verrou","parent":"1062","def":"15","img":"small_door_closed","temporaire":"0","plan":"305","ap":"24","items":[{"id":"41","count":"4"},{"id":"59","count":"10"},{"id":"84","count":"1"},{"id":"160","count":"3"}]},{"id":"1035","name":"Scanner","parent":"1050","def":"0","img":"item_tagger","temporaire":"0","plan":"306","ap":"20","items":[{"id":"2","count":"2"},{"id":"41","count":"1"},{"id":"101","count":"1"},{"id":"105","count":"2"}]},{"id":"1036","name":"Poutres renfort","parent":"1031","def":"25","img":"item_plate","temporaire":"0","plan":"305","ap":"55","items":[{"id":"41","count":"2"},{"id":"159","count":"1"},{"id":"160","count":"3"}]},{"id":"1037","name":"Muraille à pointes","parent":"1031","def":"45","img":"item_plate","temporaire":"0","plan":"306","ap":"35","items":[{"id":"59","count":"5"},{"id":"60","count":"20"},{"id":"134","count":"1"}]},{"id":"1039","name":"Vaporisateur","parent":"1060","def":"35","img":"small_waterspray","temporaire":"0","plan":"0","ap":"50","items":[{"id":"1","count":"10"},{"id":"41","count":"1"},{"id":"59","count":"10"},{"id":"160","count":"7"}]},{"id":"1040","name":"Sanibroyeur","parent":"1060","def":"50","img":"small_grinder","temporaire":"0","plan":"305","ap":"55","items":[{"id":"64","count":"2"},{"id":"84","count":"2"},{"id":"159","count":"2"},{"id":"160","count":"10"}]},{"id":"1041","name":"Douves","parent":"1023","def":"65","img":"small_waterhole","temporaire":"0","plan":"305","ap":"50","items":[{"id":"1","count":"20"}]},{"id":"1042","name":"Carte améliorée","parent":"1050","def":"0","img":"item_electro","temporaire":"0","plan":"306","ap":"15","items":[{"id":"2","count":"2"},{"id":"60","count":"1"},{"id":"101","count":"1"},{"id":"105","count":"2"}]},{"id":"1043","name":"Canon à briques","parent":"1046","def":"25","img":"small_canon","temporaire":"0","plan":"0","ap":"60","items":[{"id":"84","count":"1"},{"id":"101","count":"2"},{"id":"134","count":"3"},{"id":"159","count":"5"},{"id":"160","count":"5"}]},{"id":"1044","name":"Pièges à loups","parent":"1074","def":"20","img":"small_trap","temporaire":"1","plan":"0","ap":"20","items":[{"id":"60","count":"2"},{"id":"74","count":"3"}]},{"id":"1045","name":"Crémato cue","parent":"1021","def":"0","img":"item_hmeat","temporaire":"0","plan":"307","ap":"45","items":[{"id":"159","count":"8"},{"id":"160","count":"1"}]},{"id":"1046","name":"Monticules à canons","parent":"1033","def":"15","img":"small_dig","temporaire":"0","plan":"0","ap":"50","items":[{"id":"134","count":"1"},{"id":"159","count":"7"},{"id":"160","count":"1"}]},{"id":"1047","name":"Perforeuse","parent":"1046","def":"55","img":"small_canon","temporaire":"0","plan":"306","ap":"30","items":[{"id":"41","count":"4"},{"id":"84","count":"1"},{"id":"101","count":"1"},{"id":"160","count":"10"}]},{"id":"1048","name":"Lance-Grenailles","parent":"1046","def":"60","img":"small_canon","temporaire":"0","plan":"305","ap":"35","items":[{"id":"41","count":"5"},{"id":"64","count":"3"},{"id":"73","count":"3"},{"id":"159","count":"5"},{"id":"160","count":"1"}]},{"id":"1049","name":"Tourniquet","parent":"1046","def":"10","img":"item_wood_beam","temporaire":"0","plan":"306","ap":"15","items":[{"id":"159","count":"2"},{"id":"160","count":"1"}]},{"id":"1050","name":"Tour de guet","categorie":"tower","parent":"0","def":"5","img":"item_tagger","temporaire":"0","plan":"0","ap":"12","items":[{"id":"59","count":"3"},{"id":"60","count":"2"}]},{"id":"1051","name":"Fondations","categorie":"fondations","parent":"0","def":"0","img":"small_building","temporaire":"0","plan":"0","ap":"30","items":[{"id":"59","count":"10"},{"id":"60","count":"8"}]},{"id":"1052","name":"Grand déménagement","parent":"1051","def":"255","img":"small_moving","temporaire":"0","plan":"308","ap":"500","items":[{"id":"134","count":"3"},{"id":"159","count":"12"},{"id":"160","count":"5"}]},{"id":"1053","name":"Derrick","parent":"1051","def":"0","img":"small_derrick","temporaire":"0","plan":"306","ap":"70","items":[{"id":"159","count":"10"},{"id":"160","count":"15"}]},{"id":"1054","name":"Râpe à zombies","parent":"1010","def":"55","img":"small_grater","temporaire":"0","plan":"305","ap":"60","items":[{"id":"41","count":"3"},{"id":"60","count":"20"},{"id":"64","count":"3"}]},{"id":"1055","name":"Oubliettes","parent":"1010","def":"25","img":"small_gather","temporaire":"0","plan":"306","ap":"65","items":[{"id":"59","count":"15"}]},{"id":"1056","name":"Grogro mur","parent":"1031","def":"80","img":"item_plate","temporaire":"0","plan":"305","ap":"50","items":[{"id":"59","count":"10"},{"id":"134","count":"2"},{"id":"159","count":"15"},{"id":"160","count":"10"}]},{"id":"1057","name":"Fausse ville","parent":"1051","def":"200","img":"small_falsecity","temporaire":"0","plan":"307","ap":"300","items":[{"id":"41","count":"6"},{"id":"159","count":"20"},{"id":"160","count":"15"}]},{"id":"1058","name":"Barrières","parent":"1010","def":"15","img":"small_fence","temporaire":"0","plan":"0","ap":"50","items":[{"id":"41","count":"2"},{"id":"159","count":"5"}]},{"id":"1059","name":"Arroseurs auto","parent":"1060","def":"135","img":"small_sprinkler","temporaire":"0","plan":"307","ap":"50","items":[{"id":"1","count":"20"},{"id":"84","count":"1"},{"id":"159","count":"7"},{"id":"160","count":"15"}]},{"id":"1060","name":"Réseau hydraulique","parent":"1011","def":"0","img":"item_firework_tube","temporaire":"0","plan":"305","ap":"40","items":[{"id":"41","count":"3"},{"id":"60","count":"5"},{"id":"84","count":"2"},{"id":"160","count":"5"}]},{"id":"1061","name":"Robinetterie","parent":"1051","def":"0","img":"small_valve","temporaire":"0","plan":"307","ap":"130","items":[{"id":"39","count":"1"},{"id":"41","count":"2"},{"id":"60","count":"10"},{"id":"159","count":"6"},{"id":"160","count":"3"}]},{"id":"1062","name":"Portail","categorie":"doorLock","parent":"0","def":"0","img":"small_door_closed","temporaire":"0","plan":"0","ap":"16","items":[{"id":"60","count":"2"}]},{"id":"1064","name":"Planificateur","parent":"1050","def":"0","img":"item_tagger","temporaire":"0","plan":"305","ap":"20","items":[{"id":"81","count":"1"},{"id":"101","count":"1"}]},{"id":"1065","name":"Manufacture","parent":"1033","def":"0","img":"small_factory","temporaire":"0","plan":"0","ap":"40","items":[{"id":"159","count":"5"},{"id":"160","count":"5"},{"id":"170","count":"1"}]},{"id":"1066","name":"Appâts","parent":"1028","def":"50","img":"small_meatbarbed","temporaire":"1","plan":"306","ap":"10","items":[{"id":"157","count":"3"}]},{"id":"1067","name":"Scies hurlantes","parent":"1033","def":"45","img":"small_saw","temporaire":"0","plan":"306","ap":"65","items":[{"id":"41","count":"3"},{"id":"60","count":"5"},{"id":"81","count":"3"},{"id":"160","count":"2"}]},{"id":"1068","name":"Dynamitage","parent":"1074","def":"35","img":"small_tnt","temporaire":"1","plan":"305","ap":"20","items":[{"id":"73","count":"3"}]},{"id":"1069","name":"Blindage d'entrée","parent":"1062","def":"5","img":"item_plate","temporaire":"0","plan":"0","ap":"35","items":[{"id":"59","count":"3"}]},{"id":"1070","name":"Seconde couche","parent":"1031","def":"55","img":"item_plate","temporaire":"0","plan":"306","ap":"65","items":[{"id":"59","count":"35"},{"id":"160","count":"5"}]},{"id":"1071","name":"Muraille évolutive","parent":"1031","def":"55","img":"item_home_def","temporaire":"0","plan":"308","ap":"65","items":[{"id":"59","count":"5"},{"id":"60","count":"20"},{"id":"134","count":"1"}]},{"id":"1072","name":"Scrutateur","parent":"1050","def":"0","img":"small_gather","temporaire":"0","plan":"305","ap":"30","items":[{"id":"101","count":"1"},{"id":"159","count":"3"},{"id":"160","count":"1"},{"id":"170","count":"1"}]},{"id":"1073","name":"Aqua tourelles","parent":"1011","def":"10","img":"item_tube","temporaire":"0","plan":"306","ap":"60","items":[{"id":"1","count":"40"},{"id":"84","count":"1"},{"id":"160","count":"10"}]},{"id":"1074","name":"Dispositifs d'urgence","parent":"1050","def":"10","img":"status_terror","temporaire":"0","plan":"0","ap":"40","items":[{"id":"59","count":"5"},{"id":"60","count":"7"}]},{"id":"1075","name":"Registre chantier","parent":"1033","def":"0","img":"item_rp_book2","temporaire":"0","plan":"0","ap":"15","items":[{"id":"170","count":"1"}]},{"id":"1076","name":"Potence","parent":"1033","def":"0","img":"r_dhang","temporaire":"0","plan":"0","ap":"13","items":[{"id":"159","count":"1"},{"id":"196","count":"1"}]},{"id":"1077","name":"Catapulte calibrée","parent":"1015","def":"0","img":"item_courroie","temporaire":"0","plan":"306","ap":"30","items":[{"id":"40","count":"1"},{"id":"59","count":"2"},{"id":"60","count":"2"},{"id":"101","count":"2"}]},{"id":"1100","name":"Canon brutal","parent":"1046","def":"25","img":"small_canon","temporaire":"1","plan":"0","ap":"24","items":[{"id":"64","count":"2"},{"id":"160","count":"1"}]},{"id":"1101","name":"Architectoire","parent":"1075","def":"0","img":"small_refine","temporaire":"0","plan":"0","ap":"75","items":[{"id":"51","count":"1"},{"id":"69","count":"1"},{"id":"159","count":"10"}]},{"id":"1102","name":"Abattoir","parent":"1033","def":"35","img":"small_slaughterhouse","temporaire":"0","plan":"305","ap":"40","items":[{"id":"134","count":"2"},{"id":"160","count":"10"}]},{"id":"1103","name":"Supports défensifs","parent":"1033","def":"0","img":"item_shield","temporaire":"0","plan":"308","ap":"55","items":[{"id":"159","count":"5"},{"id":"160","count":"15"}]},{"id":"1104","name":"Cantine à bois","parent":"1033","def":"0","img":"small_cafet","temporaire":"1","plan":"306","ap":"6","items":[{"id":"1","count":"1"},{"id":"59","count":"2"},{"id":"95","count":"1"}]},{"id":"1105","name":"Cimetière cadenassé","parent":"1033","def":"0","img":"small_cemetery","temporaire":"0","plan":"305","ap":"36","items":[{"id":"41","count":"1"},{"id":"59","count":"10"}]},{"id":"1106","name":"Cercueils sur ressort","parent":"1105","def":"0","img":"small_coffin","temporaire":"0","plan":"308","ap":"100","items":[{"id":"40","count":"1"},{"id":"41","count":"2"},{"id":"59","count":"5"},{"id":"60","count":"15"}]},{"id":"1107","name":"Cantine centrale","parent":"1033","def":"0","img":"small_cafet","temporaire":"0","plan":"307","ap":"20","items":[{"id":"95","count":"1"},{"id":"159","count":"5"},{"id":"160","count":"1"},{"id":"170","count":"1"}]},{"id":"1108","name":"Laboratoire central","parent":"1033","def":"0","img":"item_acid","temporaire":"0","plan":"307","ap":"30","items":[{"id":"41","count":"3"},{"id":"95","count":"5"},{"id":"159","count":"3"},{"id":"160","count":"10"}]},{"id":"1109","name":"Poulailler","parent":"1033","def":"0","img":"small_chicken","temporaire":"0","plan":"307","ap":"40","items":[{"id":"42","count":"3"},{"id":"59","count":"5"},{"id":"84","count":"1"},{"id":"159","count":"5"}]},{"id":"1110","name":"Infirmerie","parent":"1033","def":"0","img":"small_infirmary","temporaire":"0","plan":"308","ap":"40","items":[{"id":"95","count":"6"},{"id":"136","count":"1"},{"id":"159","count":"5"},{"id":"160","count":"5"}]},{"id":"1111","name":"Stratégies citoyennes","parent":"1033","def":"0","img":"small_strategy","temporaire":"0","plan":"308","ap":"60","items":[{"id":"41","count":"3"},{"id":"159","count":"10"},{"id":"160","count":"5"}]},{"id":"1112","name":"Quartiers circulaires","parent":"1033","def":"0","img":"small_strategy","temporaire":"0","plan":"308","ap":"60","items":[{"id":"41","count":"3"},{"id":"159","count":"15"},{"id":"160","count":"15"}]},{"id":"1113","name":"Champs d'épouvantails","parent":"1051","def":"15","img":"small_scarecrow","temporaire":"0","plan":"0","ap":"35","items":[{"id":"59","count":"15"},{"id":"81","count":"2"}]},{"id":"1114","name":"Décharge publique","parent":"1051","def":"0","img":"small_trash","temporaire":"0","plan":"0","ap":"70","items":[{"id":"134","count":"5"},{"id":"159","count":"15"},{"id":"160","count":"15"}]},{"id":"1115","name":"Décharge humidifiée","parent":"1114","def":"75","img":"small_trash","temporaire":"0","plan":"308","ap":"120","items":[{"id":"1","count":"20"},{"id":"159","count":"15"},{"id":"160","count":"10"}]},{"id":"1116","name":"Décharge blindée","parent":"1114","def":"0","img":"small_trash","temporaire":"0","plan":"307","ap":"40","items":[{"id":"41","count":"3"},{"id":"60","count":"8"}]},{"id":"1117","name":"Décharge piégée","parent":"1114","def":"0","img":"small_trash","temporaire":"0","plan":"307","ap":"20","items":[{"id":"41","count":"1"},{"id":"60","count":"8"}]},{"id":"1118","name":"Appâts odorants","parent":"1114","def":"0","img":"small_trash","temporaire":"0","plan":"306","ap":"20","items":[{"id":"59","count":"15"}]},{"id":"1119","name":"Déchardes de bois","parent":"1114","def":"0","img":"small_trash","temporaire":"0","plan":"306","ap":"30","items":[{"id":"41","count":"1"},{"id":"59","count":"5"},{"id":"60","count":"5"}]},{"id":"1120","name":"Ferraillerie","parent":"1114","def":"0","img":"small_trash","temporaire":"0","plan":"306","ap":"30","items":[{"id":"59","count":"5"},{"id":"60","count":"5"}]},{"id":"1122","name":"Cage à viande","parent":"1051","def":"0","img":"small_fleshcage","temporaire":"0","plan":"306","ap":"40","items":[{"id":"41","count":"2"},{"id":"60","count":"8"},{"id":"128","count":"1"},{"id":"159","count":"1"}]},{"id":"1123","name":"Enclos","parent":"1114","def":"0","img":"small_howlingbait","temporaire":"0","plan":"306","ap":"30","items":[{"id":"159","count":"10"}]},{"id":"1124","name":"Phare","parent":"1051","def":"0","img":"small_lighthouse","temporaire":"0","plan":"306","ap":"30","items":[{"id":"101","count":"2"},{"id":"159","count":"5"},{"id":"160","count":"5"}]},{"id":"1125","name":"Habitations fortifiées","parent":"1051","def":"0","img":"small_city_up","temporaire":"0","plan":"307","ap":"50","items":[{"id":"134","count":"2"},{"id":"159","count":"15"},{"id":"160","count":"10"}]},{"id":"1126","name":"Feu de joie","parent":"1051","def":"30","img":"small_score","temporaire":"1","plan":"307","ap":"15","items":[{"id":"26","count":"1"},{"id":"59","count":"5"}]},{"id":"1127","name":"Dictature des héros","parent":"1051","def":"0","img":"small_court","temporaire":"0","plan":"307","ap":"12","items":[{"id":"59","count":"6"},{"id":"160","count":"5"},{"id":"170","count":"1"}]},{"id":"1128","name":"Bureau des esclavagistes","parent":"1051","def":"0","img":"small_slave","temporaire":"0","plan":"308","ap":"45","items":[{"id":"159","count":"10"},{"id":"160","count":"5"},{"id":"196","count":"2"}]},{"id":"1130","name":"Cinéma","parent":"1051","def":"0","img":"small_cinema","temporaire":"0","plan":"308","ap":"100","items":[{"id":"101","count":"3"},{"id":"159","count":"15"},{"id":"160","count":"5"},{"id":"186","count":"1"},{"id":"187","count":"1"}]},{"id":"1131","name":"Montgolfière","parent":"1051","def":"0","img":"small_balloon","temporaire":"0","plan":"308","ap":"100","items":[{"id":"41","count":"6"},{"id":"54","count":"4"},{"id":"159","count":"5"},{"id":"160","count":"5"}]},{"id":"1132","name":"Labyrinthe","parent":"1051","def":"85","img":"small_labyrinth","temporaire":"0","plan":"307","ap":"200","items":[{"id":"41","count":"2"},{"id":"59","count":"40"},{"id":"60","count":"10"},{"id":"134","count":"4"}]},{"id":"1133","name":"Dernière chance","parent":"1051","def":"55","img":"small_lastchance","temporaire":"0","plan":"307","ap":"150","items":[{"id":"41","count":"4"},{"id":"159","count":"15"},{"id":"160","count":"10"}]},{"id":"1134","name":"Roquettes","parent":"1051","def":"0","img":"small_rocket","temporaire":"1","plan":"308","ap":"50","items":[{"id":"1","count":"10"},{"id":"41","count":"1"},{"id":"60","count":"5"},{"id":"73","count":"1"},{"id":"132","count":"2"}]},{"id":"1135","name":"Feux d'artifices","parent":"1051","def":"0","img":"small_fireworks","temporaire":"0","plan":"308","ap":"50","items":[{"id":"41","count":"1"},{"id":"73","count":"4"},{"id":"132","count":"2"},{"id":"159","count":"3"},{"id":"160","count":"3"}]},{"id":"1136","name":"Autel de la rédemption","parent":"1051","def":"0","img":"small_redemption","temporaire":"0","plan":"307","ap":"24","items":[{"id":"43","count":"1"},{"id":"159","count":"3"},{"id":"160","count":"2"}]},{"id":"1137","name":"PMV géant","parent":"1051","def":"0","img":"small_pmvbig","temporaire":"0","plan":"308","ap":"300","items":[{"id":"41","count":"2"},{"id":"60","count":"30"}]},{"id":"1138","name":"Statue du Corbeau","parent":"1051","def":"0","img":"small_crow","temporaire":"0","plan":"308","ap":"300","items":[{"id":"74","count":"3"},{"id":"159","count":"35"}]},{"id":"1139","name":"Grande roue de Grostas","parent":"1051","def":"0","img":"small_wheel","temporaire":"0","plan":"308","ap":"300","items":[{"id":"1","count":"20"},{"id":"41","count":"5"},{"id":"134","count":"3"},{"id":"160","count":"5"}]},{"id":"1140","name":"Château de sable","parent":"1051","def":"0","img":"small_castle","temporaire":"0","plan":"308","ap":"300","items":[{"id":"1","count":"30"},{"id":"159","count":"15"},{"id":"160","count":"10"}]},{"id":"1141","name":"Percée","parent":"1011","def":"0","img":"item_tube","temporaire":"1","plan":"305","ap":"12","items":[{"id":"59","count":"2"},{"id":"60","count":"1"}]},{"id":"1142","name":"Pluvio-canons","parent":"1011","def":"80","img":"small_watercanon","temporaire":"0","plan":"306","ap":"40","items":[{"id":"1","count":"15"},{"id":"59","count":"5"},{"id":"60","count":"5"},{"id":"160","count":"5"}]},{"id":"1143","name":"Filtre","parent":"1020","def":"0","img":"item_jerrycan","temporaire":"0","plan":"307","ap":"50","items":[{"id":"60","count":"10"},{"id":"101","count":"2"},{"id":"204","count":"1"}]},{"id":"1144","name":"Pamplemousses explosifs","parent":"1026","def":"0","img":"item_bgrenade","temporaire":"0","plan":"306","ap":"30","items":[{"id":"1","count":"10"},{"id":"59","count":"5"},{"id":"73","count":"5"}]},{"id":"1145","name":"Fertilisation sauvage","parent":"1026","def":"0","img":"item_digger","temporaire":"0","plan":"307","ap":"30","items":[{"id":"1","count":"10"},{"id":"51","count":"2"},{"id":"60","count":"5"},{"id":"95","count":"8"}]},{"id":"1146","name":"Pommier de l'outre-monde","parent":"1011","def":"0","img":"small_appletree","temporaire":"0","plan":"308","ap":"30","items":[{"id":"1","count":"10"},{"id":"74","count":"2"},{"id":"95","count":"3"},{"id":"159","count":"1"}]},{"id":"1149","name":"Douches","parent":"1060","def":"0","img":"small_shower","temporaire":"0","plan":"306","ap":"25","items":[{"id":"1","count":"5"},{"id":"59","count":"4"},{"id":"60","count":"1"},{"id":"84","count":"1"}]},{"id":"1150","name":"Caniveaux","parent":"1011","def":"60","img":"small_shower","temporaire":"0","plan":"305","ap":"50","items":[{"id":"1","count":"15"},{"id":"59","count":"10"}]},{"id":"1151","name":"Rid'eau","parent":"1011","def":"35","img":"small_shower","temporaire":"0","plan":"307","ap":"20","items":[{"id":"1","count":"10"}]},{"id":"1152","name":"Roquette foreuse","parent":"1011","def":"0","img":"small_rocketperf","temporaire":"0","plan":"308","ap":"100","items":[{"id":"73","count":"1"},{"id":"84","count":"1"},{"id":"132","count":"1"},{"id":"159","count":"5"},{"id":"160","count":"5"}]},{"id":"1153","name":"Détecteur à eau","parent":"1011","def":"0","img":"small_waterdetect","temporaire":"0","plan":"308","ap":"130","items":[{"id":"101","count":"5"},{"id":"159","count":"5"},{"id":"160","count":"10"}]},{"id":"1155","name":"Conduite d'aération","parent":"1062","def":"20","img":"small_ventilation","temporaire":"0","plan":"307","ap":"24","items":[{"id":"41","count":"1"},{"id":"60","count":"8"}]},{"id":"1156","name":"Palissade","parent":"1010","def":"45","img":"small_fence","temporaire":"0","plan":"305","ap":"50","items":[{"id":"41","count":"2"},{"id":"59","count":"20"},{"id":"159","count":"5"}]},{"id":"1157","name":"Troisième couche","parent":"1070","def":"80","img":"item_plate","temporaire":"0","plan":"305","ap":"65","items":[{"id":"60","count":"30"},{"id":"64","count":"5"},{"id":"160","count":"5"}]},{"id":"1158","name":"Bétonnade","parent":"1031","def":"50","img":"small_wallimprove","temporaire":"0","plan":"307","ap":"60","items":[{"id":"134","count":"6"},{"id":"160","count":"2"}]},{"id":"1159","name":"Mur savonné","parent":"1010","def":"60","img":"small_wallimprove","temporaire":"0","plan":"306","ap":"40","items":[{"id":"1","count":"10"},{"id":"95","count":"6"},{"id":"134","count":"1"}]},{"id":"1160","name":"Pulvérisateur","parent":"1010","def":"0","img":"small_waterspray","temporaire":"0","plan":"306","ap":"50","items":[{"id":"41","count":"2"},{"id":"60","count":"10"},{"id":"84","count":"1"},{"id":"160","count":"2"}]},{"id":"1161","name":"Projection acide","parent":"1160","def":"35","img":"small_acidspray","temporaire":"1","plan":"0","ap":"30","items":[{"id":"1","count":"2"},{"id":"95","count":"5"}]},{"id":"1162","name":"Neurotoxine","parent":"1160","def":"110","img":"small_gazspray","temporaire":"1","plan":"306","ap":"40","items":[{"id":"1","count":"2"},{"id":"51","count":"3"},{"id":"95","count":"7"}]},{"id":"1163","name":"Cloison en bois","parent":"1010","def":"25","img":"item_plate","temporaire":"0","plan":"305","ap":"30","items":[{"id":"59","count":"15"},{"id":"60","count":"5"}]},{"id":"1164","name":"Cloison métallique","parent":"1010","def":"25","img":"item_plate","temporaire":"0","plan":"305","ap":"30","items":[{"id":"59","count":"5"},{"id":"60","count":"10"}]},{"id":"1165","name":"Cloison épaisse","parent":"1010","def":"30","img":"item_plate","temporaire":"0","plan":"306","ap":"30","items":[{"id":"59","count":"10"},{"id":"60","count":"10"}]},{"id":"1166","name":"Contre-plaqué","parent":"1010","def":"15","img":"item_plate","temporaire":"0","plan":"305","ap":"30","items":[{"id":"59","count":"5"},{"id":"60","count":"5"}]},{"id":"1167","name":"Bastion","parent":"1010","def":"45","img":"item_plate","temporaire":"0","plan":"306","ap":"30","items":[{"id":"59","count":"15"},{"id":"60","count":"15"}]},{"id":"1168","name":"Panique","parent":"1074","def":"30","img":"status_terror","temporaire":"1","plan":"0","ap":"25","items":[{"id":"1","count":"4"},{"id":"59","count":"5"},{"id":"60","count":"5"}]},{"id":"1169","name":"La Bamba","parent":"1074","def":"75","img":"small_bamba","temporaire":"1","plan":"307","ap":"50","items":[{"id":"59","count":"5"},{"id":"60","count":"5"},{"id":"105","count":"3"}]},{"id":"1170","name":"Tour des gardiens","parent":"1050","def":"15","img":"small_watchmen","temporaire":"0","plan":"306","ap":"24","items":[{"id":"41","count":"1"},{"id":"64","count":"1"},{"id":"159","count":"10"},{"id":"160","count":"2"}]},{"id":"1171","name":"Tour des éclaireurs","parent":"1050","def":"10","img":"small_watchmen","temporaire":"0","plan":"307","ap":"36","items":[{"id":"41","count":"1"},{"id":"159","count":"5"},{"id":"160","count":"1"}]},{"id":"1172","name":"Décharge organisée","parent":"1114","def":"0","img":"small_trashclean","temporaire":"0","plan":"307","ap":"30","items":[{"id":"41","count":"2"},{"id":"134","count":"1"},{"id":"159","count":"10"},{"id":"160","count":"6"},{"id":"169","count":"2"}]},{"id":"1173","name":"Réacteur soviétique","parent":"1051","def":"500","img":"small_arma","temporaire":"0","plan":"308","ap":"100","items":[{"id":"2","count":"10"},{"id":"39","count":"1"},{"id":"101","count":"4"},{"id":"134","count":"2"},{"id":"160","count":"15"}]},{"id":"1174","name":"Poupée Vaudou XXL","parent":"1074","def":"200","img":"small_vaudoudoll","temporaire":"1","plan":"0","ap":"40","items":[{"id":"1","count":"2"},{"id":"41","count":"3"},{"id":"60","count":"2"},{"id":"64","count":"8"},{"id":"352","count":"5"}]},{"id":"1175","name":"Guillotine à Bokor","parent":"1074","def":"300","img":"small_bokorsword","temporaire":"1","plan":"0","ap":"60","items":[{"id":"64","count":"9"},{"id":"159","count":"8"},{"id":"160","count":"7"},{"id":"352","count":"8"}]},{"id":"1176","name":"Mirage Spirituel","parent":"1074","def":"100","img":"small_spiritmirage","temporaire":"1","plan":"0","ap":"30","items":[{"id":"59","count":"6"},{"id":"64","count":"6"},{"id":"159","count":"6"},{"id":"352","count":"3"}]},{"id":"1177","name":"Pluie Bénite","parent":"1074","def":"200","img":"small_holyrain","temporaire":"1","plan":"0","ap":"40","items":[{"id":"1","count":"7"},{"id":"59","count":"8"},{"id":"159","count":"9"},{"id":"352","count":"5"}]}];
 	unsafeWindow.detail_items_bbh = [null,{"categorie":"Provision","nom":"Ration d'eau","img":"water"},{"categorie":"Autre","nom":"Pile","img":"pile"},{"categorie":"Provision","nom":"Boîte de Conserve","img":"can"},{"categorie":"Provision","nom":"Boîte de Conserve ouverte","img":"can_open"},{"categorie":"Arme","nom":"Lance-Pile 1-PDTG (chargé)","img":"pilegun"},null,{"categorie":"Arme","nom":"Taser d'auto-défense","img":"taser"},{"categorie":"Arme","nom":"Aqua-Splash (vide)","img":"watergun_opt_empty"},{"categorie":"Arme","nom":"Batteur électrique (chargé)","img":"mixergun"},{"categorie":"Arme","nom":"Tronçonneuse (chargée)","img":"chainsaw"},{"categorie":"Arme","nom":"Tondeuse à gazon","img":"lawn"},null,{"categorie":"Arme","nom":"Clé à Molette","img":"wrench"},{"categorie":"Arme","nom":"Tournevis","img":"screw"},{"categorie":"Arme","nom":"Grand Bâton Sec","img":"staff"},{"categorie":"Arme","nom":"Couteau à dents","img":"knife"},{"categorie":"Arme","nom":"Coupe-coupe","img":"cutcut"},{"categorie":"Arme","nom":"Canif dérisoire","img":"small_knife"},{"categorie":"Arme","nom":"Couteau Suisse","img":"swiss_knife"},{"categorie":"Arme","nom":"Cutter","img":"cutter"},null,{"categorie":"Sacs","nom":"Caddie","img":"cart"},{"categorie":"Ouvre-boîte","nom":"Ouvre-boîte","img":"can_opener"},null,{"categorie":"Sacs","nom":"Sac supplémentaire","img":"bag"},{"categorie":"Autre","nom":"Boîte d'allumettes","img":"lights"},null,{"categorie":"Pharmacie","nom":"Piqûre de calmant","img":"xanax"},{"categorie":"Amenagement","nom":"Rocking Chair","img":"chair"},{"categorie":"Autre","nom":"Livre poussiéreux","img":"rp_book"},{"categorie":"Objet_Defense","nom":"Matelas","img":"bed"},{"categorie":"Amenagement","nom":"Lampe de chevet éteinte","img":"lamp"},{"categorie":"Amenagement","nom":"Tapis Persan","img":"carpet"},{"categorie":"Amenagement","nom":"Petite chaîne HiFi en panne","img":"music_part"},{"categorie":"Amenagement","nom":"Chaîne de Porte + cadenas","img":"lock"},{"categorie":"Amenagement","nom":"Paillasson","img":"door_carpet"},null,{"categorie":"Autre","nom":"Dés","img":"dice"},{"categorie":"Autre","nom":"Moteur","img":"engine"},{"categorie":"Autre","nom":"Courroie","img":"courroie"},{"categorie":"Ressource_rare","nom":"Poignée de vis et écrous","img":"meca_parts"},{"categorie":"Animaux","nom":"Poule","img":"pet_chick"},{"categorie":"Animaux","nom":"Cochon malodorant","img":"pet_pig"},{"categorie":"Animaux","nom":"Rat géant","img":"pet_rat"},{"categorie":"Animaux","nom":"Chien hargneux","img":"pet_dog"},{"categorie":"Animaux","nom":"Gros chat mignon","img":"pet_cat"},{"categorie":"Animaux","nom":"Serpent de 2 mètres","img":"pet_snake"},{"categorie":"Autre","nom":"Petit manche vibrant (chargé)","img":"vibr"},null,null,{"categorie":"Pharmacie","nom":"Stéroïdes Anabolisants","img":"drug"},{"categorie":"Provision","nom":"Steak appétissant","img":"meat"},{"categorie":"Provision","nom":"Viande indéfinissable","img":"undef"},{"categorie":"Camping","nom":"Toile de tente","img":"sheet"},null,{"categorie":"Sacs","nom":"Sac super-pratique","img":"bagxl"},null,{"categorie":"Ressource","nom":"Jerrycan plein","img":"jerrycan"},{"categorie":"Ressource","nom":"Planche tordue","img":"wood2"},{"categorie":"Ressource","nom":"Ferraille","img":"metal"},null,{"categorie":"Arme","nom":"Bombe à eau","img":"grenade"},null,{"categorie":"Objet_Defense","nom":"Plaque de tôle","img":"plate"},{"categorie":"Autre","nom":"Pompe à Jerrycan (démontée)","img":"jerrygun_part"},{"categorie":"Pharmacie","nom":"Bandage rudimentaire","img":"bandage"},null,null,{"categorie":"Provision","nom":"Vodka Marinostov","img":"vodka"},{"categorie":"Arme","nom":"Pompe à Jerrycan (vide)","img":"jerrygun_off"},null,null,{"categorie":"Ressource_rare","nom":"Explosifs bruts","img":"explo"},{"categorie":"Provision","nom":"Viande Humaine","img":"hmeat"},null,{"categorie":"Autre","nom":"Sac plastique","img":"grenade_empty"},{"categorie":"Arme","nom":"Bombe à eau explosive","img":"bgrenade"},{"categorie":"Arme","nom":"Sac plastique + explosif","img":"bgrenade_empty"},{"categorie":"Arme","nom":"Tronçonneuse incomplète","img":"chainsaw_part"},{"categorie":"Arme","nom":"Batteur incomplet","img":"mixergun_part"},{"categorie":"Autre","nom":"Rustine","img":"rustine"},{"categorie":"Arme","nom":"Tondeuse démontée","img":"lawn_part"},null,{"categorie":"Ressource_rare","nom":"Tube de cuivre","img":"tube"},{"categorie":"Sacs","nom":"Caddie bancal","img":"cart_part"},null,null,{"categorie":"Sacs","nom":"Ceinture à poches","img":"pocket_belt"},{"categorie":"Pharmacie","nom":"Twinoïde 500mg","img":"drug_hero"},{"categorie":"Autre_encombrant","nom":"Boîte en métal","img":"chest"},{"categorie":"Autre_encombrant","nom":"Gros coffre en métal","img":"chest_xl"},{"categorie":"Autre_encombrant","nom":"Caisse de matériel","img":"chest_tools"},{"categorie":"Amenagement","nom":"Lampe de chevet allumée","img":"lamp_on"},{"categorie":"Amenagement","nom":"Petite Chaîne HiFi allumée","img":"music"},{"categorie":"Pharmacie","nom":"Produits pharmaceutiques","img":"pharma"},{"categorie":"Camping","nom":"Fragments de tôle","img":"plate_raw"},{"categorie":"Provision","nom":"« Debout-les-Morts »","img":"rhum"},{"categorie":"Provision","nom":"Café brûlant","img":"coffee"},{"categorie":"Provision","nom":"Cafetière","img":"coffee_machine"},{"categorie":"Autre","nom":"Cafetière incomplète","img":"coffee_machine_part"},{"categorie":"Ressource_rare","nom":"Composant électronique","img":"electro"},{"categorie":"Autre","nom":"Affaires d'un citoyen","img":"chest_citizen"},{"categorie":"Pharmacie","nom":"Hydratone 100mg","img":"drug_water"},{"categorie":"Amenagement","nom":"Radio K7 éteint","img":"radio_off"},{"categorie":"Amenagement","nom":"Radio K7","img":"radio_on"},{"categorie":"Pharmacie","nom":"Cyanure","img":"cyanure"},{"categorie":"Objet_Defense","nom":"Vieille porte","img":"door"},{"categorie":"Provision","nom":"Légume suspect","img":"vegetable"},{"categorie":"Autre","nom":"Kit de bricolage abimé","img":"repair_kit_part"},{"categorie":"Autre","nom":"Kit de bricolage","img":"repair_kit"},{"categorie":"Arme","nom":"Pistolet à Eau (vide)","img":"watergun_empty"},{"categorie":"Arme","nom":"Aqua-Splash (3 charges)","img":"watergun_opt_3"},{"categorie":"Arme","nom":"Aqua-Splash (2 charges)","img":"watergun_opt_2"},{"categorie":"Arme","nom":"Aqua-Splash (1 charge)","img":"watergun_opt_1"},{"categorie":"Arme","nom":"Batteur électrique (éteint)","img":"mixergun_empty"},{"categorie":"Arme","nom":"Tronçonneuse (éteinte)","img":"chainsaw_empty"},{"categorie":"Arme","nom":"Lance-Pile 1-PDTG (vide)","img":"pilegun_empty"},{"categorie":"Arme","nom":"Taser d'auto-défense (éteint)","img":"taser_empty"},{"categorie":"Autre","nom":"Sport-Elec (éteint)","img":"sport_elec_empty"},{"categorie":"Autre","nom":"Sport-Elec (chargé)","img":"sport_elec"},null,{"categorie":"Arme","nom":"Devastator (vide)","img":"big_pgun_empty"},{"categorie":"Arme","nom":"Devastator (chargé)","img":"big_pgun"},{"categorie":"Arme","nom":"Devastator incomplet","img":"big_pgun_part"},{"categorie":"Autre","nom":"Balise « Radius »","img":"tagger"},{"categorie":"Autre","nom":"Fusée éclairante","img":"flare"},{"categorie":"Arme","nom":"Pompe à Jerrycan (prête)","img":"jerrygun"},{"categorie":"Arme","nom":"Chaise Ektörp-Gluten","img":"chair_basic"},{"categorie":"Amenagement","nom":"Revolver (vide)","img":"gun"},{"categorie":"Amenagement","nom":"Fusil d'assaut (vide)","img":"machine_gun"},null,{"categorie":"Autre","nom":"Détonateur compact","img":"deto"},{"categorie":"Objet_Defense","nom":"Sac de Ciment","img":"concrete"},{"categorie":"Objet_Defense","nom":"Pavés de béton informes","img":"concrete_wall"},{"categorie":"Pharmacie","nom":"Médicament sans étiquette","img":"drug_random"},{"categorie":"Pharmacie","nom":"Paracétoïde 7g","img":"disinfect"},{"categorie":"Autre","nom":"Désherbant Ness-Quick","img":"digger"},{"categorie":"Provision","nom":"Caisse de nourriture","img":"chest_food"},{"categorie":"Provision","nom":"Doggy-bag","img":"food_bag"},{"categorie":"Provision","nom":"Paquet de chips molles","img":"food_bar1"},{"categorie":"Provision","nom":"Napolitains moisis","img":"food_bar2"},{"categorie":"Provision","nom":"Chewing-gums séchés","img":"food_bar3"},{"categorie":"Provision","nom":"Petits Beurres rances","img":"food_biscuit"},{"categorie":"Provision","nom":"Ailerons de poulet entamés","img":"food_chick"},{"categorie":"Provision","nom":"Pim's périmé","img":"food_pims"},{"categorie":"Provision","nom":"Biscuit fade","img":"food_tarte"},{"categorie":"Provision","nom":"Jambon-beurre moisi","img":"food_sandw"},{"categorie":"Provision","nom":"Nouilles chinoises","img":"food_noodles"},{"categorie":"Autre","nom":"Epices fortes","img":"spices"},{"categorie":"Provision","nom":"Nouilles chinoises épicées","img":"food_noodles_hot"},{"categorie":"Autre","nom":"Jeu de cartes incomplet","img":"cards"},{"categorie":"Autre","nom":"Boîte de jeu","img":"game_box"},{"categorie":"Arme","nom":"Aqua-Splash (démonté)","img":"watergun_opt_part"},{"categorie":"Pharmacie","nom":"Petit manche vibrant (déchargé)","img":"vibr_empty"},null,null,{"categorie":"Provision","nom":"Os charnu","img":"bone_meat"},{"categorie":"Arme","nom":"Os humain fêlé","img":"bone"},{"categorie":"Ressource","nom":"Poutre rafistolée","img":"wood_beam"},{"categorie":"Ressource","nom":"Structures métalliques","img":"metal_beam"},{"categorie":"Ressource","nom":"Débris métalliques","img":"metal_bad"},{"categorie":"Ressource","nom":"Souche de bois pourrie","img":"wood_bad"},{"categorie":"Ressource","nom":"Scie à métaux","img":"saw_tool"},{"categorie":"Amenagement","nom":"Buche en bon état","img":"wood_log"},{"categorie":"Transfo","nom":"Appareil électronique en panne","img":"electro_box"},{"categorie":"Transfo","nom":"Meuble en kit","img":"deco_box"},{"categorie":"Ressource_rare","nom":"Scie à métaux abimée","img":"saw_tool_part"},{"categorie":"Transfo","nom":"Mécanisme","img":"mecanism"},{"categorie":"Objet_Defense","nom":"Tréteau","img":"trestle"},{"categorie":"Objet_Defense","nom":"Table Järpen","img":"table"},{"categorie":"Ressource","nom":"Micropur effervescent","img":"water_cleaner"},{"categorie":"Provision","nom":"Melon d'intestin","img":"vegetable_tasty"},{"categorie":"Autre","nom":"Poudre-Comète brute","img":"powder"},{"categorie":"Arme","nom":"Bombe Pulvérine","img":"flash"},{"categorie":"Autre","nom":"Teddy n'Ours","img":"teddy"},null,null,{"categorie":"Autre","nom":"Morceau de caisse","img":"wood_plate_part"},{"categorie":"Objet_Defense","nom":"Plaque de bois solide","img":"wood_plate"},{"categorie":"Amenagement","nom":"Liasse de billets","img":"money"},{"categorie":"Autre","nom":"Outils en vrac","img":"repair_kit_part_raw"},{"categorie":"Autre","nom":"Radius Mark II déchargée","img":"radius_mk2_part"},{"categorie":"Autre","nom":"Radius Mark II","img":"radius_mk2"},{"categorie":"Autre","nom":"Brico'Facile","img":"repair_one"},{"categorie":"Autre","nom":"Moteur incomplet","img":"engine_part"},{"categorie":"Amenagement","nom":"Vieille machine à laver","img":"machine_1"},{"categorie":"Amenagement","nom":"Four cancérigène","img":"machine_2"},{"categorie":"Amenagement","nom":"Réfrigérateur d'étudiant","img":"machine_3"},{"categorie":"Autre","nom":"Une lettre sans adresse","img":"rp_letter"},{"categorie":"Autre","nom":"Feuille raccornie","img":"rp_scroll"},{"categorie":"Autre","nom":"Manuel d'instructions","img":"rp_manual"},{"categorie":"Autre","nom":"Une étiquette","img":"rp_scroll"},{"categorie":"Autre","nom":"Carnet illisible","img":"rp_book2"},{"categorie":"Autre","nom":"Album photo","img":"rp_book"},{"categorie":"Autre","nom":"Pile de feuilles","img":"rp_sheets"},{"categorie":"Autre","nom":"Grosse chaîne rouillée","img":"chain"},{"categorie":"Provision","nom":"Plat fait-maison douteux","img":"dish"},{"categorie":"Provision","nom":"Bon plat fait-maison","img":"dish_tasty"},{"categorie":"Amenagement","nom":"Cantine en fer","img":"home_box_xl"},{"categorie":"Amenagement","nom":"Cartons","img":"home_box"},{"categorie":"Amenagement","nom":"Barricades à clouer","img":"home_def"},{"categorie":"Autre","nom":"Une enveloppe","img":"book_gen_letter"},{"categorie":"Autre","nom":"Un colis","img":"book_gen_box"},{"categorie":"Amenagement","nom":"Morceau de grillage","img":"fence"},{"categorie":"Arme","nom":"Pistolet à Eau (3 charges)","img":"watergun_3"},{"categorie":"Arme","nom":"Pistolet à Eau (2 charges)","img":"watergun_2"},{"categorie":"Arme","nom":"Pistolet à Eau (1 charge)","img":"watergun_1"},{"categorie":"Arme","nom":"Aqua-Splash (5 charges)","img":"watergun_opt_5"},{"categorie":"Arme","nom":"Aqua-Splash (4 charges)","img":"watergun_opt_4"},{"categorie":"Autre","nom":"Paquet de cigarettes entamé","img":"cigs"},{"categorie":"Autre","nom":"Calibrateur PDTT Mark II","img":"pilegun_upkit"},{"categorie":"Arme","nom":"Lance-pile Mark II (vide)","img":"pilegun_up_empty"},{"categorie":"Arme","nom":"Lance-pile Mark II (chargé)","img":"pilegun_up"},{"categorie":"Inutile","nom":"Pile broyée","img":"pile_broken"},{"categorie":"Ressource","nom":"Carton de matériaux","img":"rsc_pack_3"},{"categorie":"Ressource","nom":"Carton de matériaux","img":"rsc_pack_2"},{"categorie":"Ressource","nom":"Carton de matériaux","img":"rsc_pack_1"},{"categorie":"Objet_Defense","nom":"Portière de voiture","img":"car_door"},{"categorie":"Objet_Defense","nom":"Portière de voiture incomplète","img":"car_door_part"},{"categorie":"Autre","nom":"Fiole de poison","img":"poison"},{"categorie":"Autre","nom":"Produit corrosif","img":"poison_part"},{"categorie":"Provision","nom":"Ration d'eau","img":"water"},{"categorie":"Pharmacie","nom":"Stéroïdes Anabolisants","img":"drug"},{"categorie":"Provision","nom":"Boîte de Conserve ouverte","img":"can_open"},{"categorie":"Provision","nom":"Réserves d'un citoyen avisé","img":"chest_hero"},{"categorie":"Autre","nom":"Gros colis postal","img":"postal_box_xl"},{"categorie":"Autre","nom":"Colis postal","img":"postal_box"},null,{"categorie":"Provision","nom":"Boîte-déjeuner","img":"food_armag"},{"categorie":"Provision","nom":"Poignée de bonbons","img":"food_candies"},{"categorie":"Objet_Defense","nom":"Morceau de contreplaqué","img":"out_def"},null,{"categorie":"Objet_Defense","nom":"Torche","img":"torch"},{"categorie":"Arme","nom":"Torche consumée","img":"torch_off"},{"categorie":"Provision","nom":"Chamallows séchés","img":"chama"},{"categorie":"Provision","nom":"Chamallows calcinés","img":"chama_tasty"},{"categorie":"Autre","nom":"Caisse surprise","img":"chest_christmas_3"},{"categorie":"Autre","nom":"Caisse surprise","img":"chest_christmas_2"},{"categorie":"Autre","nom":"Caisse surprise","img":"chest_christmas_1"},{"categorie":"Autre","nom":"Un bout de papier","img":"rp_scroll"},{"categorie":"Autre","nom":"Un bonbon de Noël","img":"christmas_candy"},{"categorie":"Amenagement","nom":"Unité centrale","img":"pc"},{"categorie":"Plan","nom":"Coffre-fort","img":"safe"},{"categorie":"Autre","nom":"Une encyclopédie","img":"rp_twin"},{"categorie":"Provision","nom":"Bonbonne d'eau (vide)","img":"water_can_empty"},{"categorie":"Provision","nom":"Bonbonne d'eau (1 ration)","img":"water_can_1"},{"categorie":"Provision","nom":"Bonbonne d'eau (2 rations)","img":"water_can_2"},{"categorie":"Provision","nom":"Bonbonne d'eau (3 rations)","img":"water_can_3"},null,{"categorie":"Pharmacie","nom":"Betapropine 5mg périmée","img":"beta_drug_bad"},{"categorie":"Autre_Banni","nom":"Suintement cervical noir","img":"april_drug"},{"categorie":"Autre_Banni","nom":"Charognardes","img":"fruit_sub_part"},{"categorie":"Autre_Banni","nom":"Boule de pâte visqueuse","img":"fruit_part"},null,null,null,{"categorie":"Autre_Banni","nom":"Lambeau de chair","img":"flesh_part"},{"categorie":"Arme","nom":"Bombe macabre","img":"flesh"},{"categorie":"Autre_Banni","nom":"Substance épaisse","img":"pharma_part"},{"categorie":"Provision","nom":"Purée de charognardes","img":"fruit"},{"categorie":"Provision","nom":"Purée de charognardes","img":"fruit"},{"categorie":"Provision","nom":"Légume suspect","img":"vegetable"},{"categorie":"Autre","nom":"Eau croupie","img":"water_cup_part"},{"categorie":"Provision","nom":"Eau croupie purifiée","img":"water_cup"},{"categorie":"Autre_Banni","nom":"Note d'un citoyen banni","img":"banned_note"},null,null,null,null,{"categorie":"Autre","nom":"Pansement ensanglanté","img":"infect_poison_part"},null,{"categorie":"Provision","nom":"Ration d'eau","img":"water"},{"categorie":"Pharmacie","nom":"Stéroïdes Anabolisants","img":"drug"},{"categorie":"Provision","nom":"Boîte de Conserve ouverte","img":"can_open"},null,null,{"categorie":"Amenagement","nom":"Teddy n'Ours maudit","img":"teddy"},null,null,null,{"categorie":"Provision","nom":"Steak de sciure","img":"woodsteak"},{"categorie":"Autre","nom":"Veste rouge usée","img":"christmas_suit_1"},{"categorie":"Autre","nom":"Pantalon rouge déchiré","img":"christmas_suit_2"},{"categorie":"Autre","nom":"Bonnet rouge malodorant","img":"christmas_suit_3"},{"categorie":"Autre","nom":"Costume malodorant d'une autre époque","img":"christmas_suit_full"},{"categorie":"Arme","nom":"Téléphone portable","img":"iphone"},{"categorie":"Camping","nom":"Pelures de peau","img":"smelly_meat"},{"categorie":"Autre_Banni","nom":"Débris méconnaissables","img":"broken"},null,null,{"categorie":"Amenagement","nom":"MagLite Pif'Gadget (éteinte)","img":"maglite_off"},{"categorie":"Amenagement","nom":"MagLite Pif'Gadget (1 charge)","img":"maglite_1"},{"categorie":"Amenagement","nom":"MagLite Pif'Gadget (2 charges)","img":"maglite_2"},{"categorie":"Autre","nom":"Poudre Super-Fuzz","img":"firework_powder"},{"categorie":"Autre","nom":"Tube de lancement Floush","img":"firework_tube"},{"categorie":"Autre","nom":"Caisse de feux d'artifice","img":"firework_box"},{"categorie":"Autre","nom":"Cadavre d'un voyageur","img":"cadaver"},{"categorie":"Autre","nom":"Cadavre rongé","img":"cadaver_remains"},{"categorie":"Autre","nom":"Fumigène « Senteur Sapin »","img":"smoke_bomb"},{"categorie":"Autre","nom":"Citrouille molle","img":"pumpkin_raw"},{"categorie":"Amenagement","nom":"Citrouille molle sculptée","img":"pumpkin_off"},{"categorie":"Objet_Defense","nom":"Citrouille allumée","img":"pumpkin_on"},{"categorie":"Autre","nom":"Boules de sable","img":"sand_ball"},{"categorie":"Provision","nom":"Jus de mirabelle suspect","img":"omg_this_will_kill_you"},{"categorie":"Plan","nom":"Plan de chantier (commun)","img":"bplan_c"},{"categorie":"Plan","nom":"Plan de chantier (inhabituel)","img":"bplan_u"},{"categorie":"Plan","nom":"Plan de chantier (rare)","img":"bplan_r"},{"categorie":"Plan","nom":"Plan de chantier (très rare !)","img":"bplan_e"},{"categorie":"Plan","nom":"Coffre d'architecte","img":"bplan_box"},{"categorie":"Plan","nom":"Coffre d'architecte scellé","img":"bplan_box_e"},{"categorie":"Provision","nom":"Oeuf","img":"egg"},{"categorie":"Provision","nom":"Pomme","img":"apple"},{"categorie":"Arme","nom":"Pamplemousse explosif","img":"boomfruit"},{"categorie":"Plan","nom":"Sacoche usée","img":"bplan_drop"},null,null,null,null,null,null,{"categorie":"Ruine","nom":"Clé magnétique","img":"magneticKey"},{"categorie":"Ruine","nom":"Clé à percussion","img":"bumpKey"},{"categorie":"Ruine","nom":"Décapsuleur","img":"classicKey"},{"categorie":"Ruine","nom":"Empreinte de clé magnétique","img":"prints"},{"categorie":"Ruine","nom":"Empreinte de clé à percussion","img":"prints"},{"categorie":"Ruine","nom":"Empreinte de décapsuleur","img":"prints"},{"categorie":"Autre","nom":"Sérum pour Goule","img":"vagoul"},{"categorie":"Plan","nom":"Plan de chantier (inhabituel)","img":"bplan_u"},{"categorie":"Plan","nom":"Plan de chantier (rare)","img":"bplan_r"},{"categorie":"Plan","nom":"Plan de chantier (très rare !)","img":"bplan_e"},{"categorie":"Plan","nom":"Plan de chantier (inhabituel)","img":"bplan_u"},{"categorie":"Plan","nom":"Plan de chantier (rare)","img":"bplan_r"},{"categorie":"Plan","nom":"Plan de chantier (très rare !)","img":"bplan_e"},{"categorie":"Plan","nom":"Plan de chantier (inhabituel)","img":"bplan_u"},{"categorie":"Plan","nom":"Plan de chantier (rare)","img":"bplan_r"},{"categorie":"Plan","nom":"Plan de chantier (très rare !)","img":"bplan_e"},null,null,null,null,null,null,null,null,null,null,null,null,null,null,{"categorie":"Chaman","nom":"Âme errante","img":"soul_blue"},{"categorie":"Chaman","nom":"Âme forte","img":"soul_red"},{"categorie":"Chaman","nom":"Âme faible","img":"soul_blue"}];
 }
 
 // Analyse la page, lance les modules correspondants
+// fonction appellée une fois une page chargée complètement
 var analyser_page = function() {
 
 	unsafeWindow.sab_analysed = true;
@@ -3248,6 +3216,7 @@ var premiere_analyse = function () {
 
 unsafeWindow.sab_analysed = false; // variable témoignant de l'état d'analyse de la page. Utile uniquement pour la première analyse.
 
+// classe gérant la version du script.
 unsafeWindow.sab_version = {
 	infos : {
 		num_chrome : "1.3.3.2",
@@ -3259,6 +3228,7 @@ unsafeWindow.sab_version = {
 		espacement_verif : 3*60*1000
 		// espacement_verif : 3*1000
 	},
+	// vérification de la version
 	verifier : function () {
 		if (!unsafeWindow.sab_analysed) {
 			window.setTimeout(unsafeWindow.sab_version.verifier, 500);
@@ -3275,6 +3245,7 @@ unsafeWindow.sab_version = {
 						"v" : unsafeWindow.chrome ? "chrome" : "GM"
 					},
 					success : function (ret) {
+						// mise à jour des variables client de version
 						var donnees = ret.version;
 						if (donnees) {
 							unsafeWindow.sab_cache.set_domaine("sab");
@@ -3290,6 +3261,7 @@ unsafeWindow.sab_version = {
 							unsafeWindow.sab_cache.set_long_term("avertissement_version",donnees);
 						} else
 							unsafeWindow.sab_cache.set_long_term("avertissement_version",false);
+						//affichage de l'icone si besoin
 						if (a_valider)
 							unsafeWindow.sab_version.valider_num_version();
 					},
@@ -3301,6 +3273,8 @@ unsafeWindow.sab_version = {
 			unsafeWindow.sab_version.valider_num_version();
 		}
 	},
+	// valide si la version actuelle est la bonne à partir de la version serveur.
+	// affiche l'icone correspondante
 	valider_num_version : function (num_version) {
 		unsafeWindow.sab_cache.set_domaine("sab");
 		var avertissement = unsafeWindow.sab_cache.get_long_term("avertissement_version");
@@ -3317,6 +3291,7 @@ unsafeWindow.sab_version = {
 			$sab('#clock').before(img_maj);
 	
 	},
+	// ouvre la page de mise à jour
 	mise_a_jour : function (bouton) {
 		// window.open(this.infos["url_maj_"+(unsafeWindow.chrome ? "chrome" : "GM")]+"?v="+unsafeWindow.sab_version.infos.num_verified,"_top");
 		// window.open(this.infos["url_maj_"+(unsafeWindow.chrome ? "chrome" : "GM")],"_top");
@@ -3389,7 +3364,7 @@ unsafeWindow.sab_cache.set("last_loading",time_now);
 if (time_now - last_loading > 20*60*1000) {
 // if (time_now - last_loading > 3*1000) {
 	unsafeWindow.sab_serveur.datas.loading_a_faire = true;
-	unsafeWindow.sab_serveur.execution_identifee(unsafeWindow.sab_serveur.load_session(unsafeWindow.sab_main));
+	unsafeWindow.sab_serveur.execution_identifee(unsafeWindow.sab_serveur.load_session(unsafeWindow.sab_main)); // chargement initial de la session
 } else unsafeWindow.sab_main();
 
 }); // fin onload
